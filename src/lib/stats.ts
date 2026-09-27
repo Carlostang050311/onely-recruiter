@@ -1,147 +1,133 @@
-// 漏斗与进度统计：全部基于时间戳的"到达过该阶段"口径（比当前状态更准确）。
+// 统计 v2 —— 漏斗 / 来源 / 地区 / 分级 / 每日节奏 / 自动化降本测算（口径与参照稿一致）。
 
-import type { LeadRow, Status } from './types';
-import { STATUS_FLOW, STATUS_LABELS, channelLabel } from './types';
-import { safeParsePlatforms } from './scoring';
+import type { Lead } from './types';
+import { COUNTRIES, SOURCES, countryByCode, todayStr, addDays } from './types';
 
 export const TARGET = 100;
-/** 三天累计目标：D1 33 / D2 67 / D3 100 */
-export const TARGET_CUM = [34, 67, 100];
+export const DAILY_PLAN = [30, 35, 35];
 
-export interface FunnelStage {
-  status: Status;
-  label: string;
-  reached: number;
-  convFromPrev: number | null; // 0-1
-}
-
-export interface ChannelRow {
-  channel: string;
-  label: string;
+export interface FunnelCounts {
   leads: number;
   contacted: number;
   replied: number;
-  applied: number;
+  qualified: number;
   onboarded: number;
-  replyRate: number | null;
+  hot: number;
 }
 
-export interface PaceDay {
-  day: string; // D1 / D2 / D3
-  date: string; // M/D
-  onboarded: number;
-  targetCum: number;
+export function funnelCounts(L: Lead[]): FunnelCounts {
+  const is = (l: Lead, ks: string[]) => ks.indexOf(l.status) >= 0;
+  return {
+    leads: L.length,
+    contacted: L.filter((l) => is(l, ['contacted', 'replied', 'qualified', 'onboarded'])).length,
+    replied: L.filter((l) => is(l, ['replied', 'qualified', 'onboarded'])).length,
+    qualified: L.filter((l) => is(l, ['qualified', 'onboarded'])).length,
+    onboarded: L.filter((l) => l.status === 'onboarded').length,
+    hot: L.filter((l) => l.tier === 'S' || l.tier === 'A').length,
+  };
 }
+
+const ONBOARD_TEXT = '加入 Discord 并完成入驻清单，分配首个账号';
+
+/** 每日入驻实际：按入驻动态日期落入最近三个战役日（D-2 / D-1 / 今天） */
+export function dailyActual(L: Lead[], today = todayStr()): number[] {
+  const buckets = [addDays(today, -2), addDays(today, -1), today];
+  const out = [0, 0, 0];
+  for (const l of L) {
+    if (l.status !== 'onboarded') continue;
+    const act = l.activities.find((a) => a.text === ONBOARD_TEXT);
+    const d = act ? act.t : l.created_at;
+    const idx = buckets.indexOf(d);
+    if (idx >= 0) out[idx] += 1;
+  }
+  return out;
+}
+
+export function sourceCounts(L: Lead[]): [string, number][] {
+  const m: Record<string, number> = {};
+  SOURCES.forEach((s) => (m[s] = 0));
+  L.forEach((l) => {
+    const k = SOURCES.includes(l.source) ? l.source : SOURCES[0];
+    m[k] = (m[k] || 0) + 1;
+  });
+  return Object.entries(m)
+    .filter((e) => e[1] > 0)
+    .sort((a, b) => a[1] - b[1]);
+}
+
+export function geoCounts(L: Lead[]): [string, number][] {
+  const m: Record<string, number> = {};
+  COUNTRIES.forEach((c) => (m[c.code] = 0));
+  L.forEach((l) => (m[l.country] = (m[l.country] || 0) + 1));
+  return Object.entries(m)
+    .filter((e) => e[1] > 0)
+    .sort((a, b) => b[1] - a[1]);
+}
+
+export function tierCounts(L: Lead[]): Record<'S' | 'A' | 'B' | 'C', number> {
+  const t = { S: 0, A: 0, B: 0, C: 0 };
+  L.forEach((l) => (t[l.tier] = (t[l.tier] || 0) + 1));
+  return t;
+}
+
+/** 自动化降本测算：以 1,000 条有效线索的一期战役为口径（分钟 → 小时） */
+export const SAVINGS = (() => {
+  const cats = ['采集录入', '去重', '分级评分', '文案撰写', '跟进排期', '数据统计', '回复与面试'];
+  const manH = [2000, 800, 3000, 4750, 1425, 300, 600].map((m) => +(m / 60).toFixed(1));
+  const autH = [50, 10, 20, 48, 19, 5, 600].map((m) => +(m / 60).toFixed(1));
+  const manualTotal = +manH.reduce((a, b) => a + b, 0).toFixed(1);
+  const autoTotal = +autH.reduce((a, b) => a + b, 0).toFixed(1);
+  return {
+    cats,
+    manH,
+    autH,
+    manualTotal,
+    autoTotal,
+    saved: +(manualTotal - autoTotal).toFixed(1),
+    savedPct: Math.round((1 - autoTotal / manualTotal) * 100),
+    fteManual: Math.ceil(manualTotal / 24),
+    fteAuto: autoTotal / 24 < 1 ? '0.5' : '1',
+  };
+})();
 
 export interface Stats {
-  totals: {
-    leads: number;
-    onboarded: number;
-    target: number;
-    targetPct: number;
-    followupsDue: number;
-    aTier: number;
-    currentDay: number; // 冲刺第几天（1-3）
-    targetNow: number; // 当前应达累计目标线
+  kpi: FunnelCounts & {
+    contactRate: number;
+    replyRate: number;
+    qualRate: number;
+    onbRate: number;
+    hotRate: number;
   };
-  funnel: FunnelStage[];
-  byChannel: ChannelRow[];
-  pace: PaceDay[];
-  rates: { replyRate: number | null; applyRate: number | null; sampleRate: number | null; acceptRate: number | null };
+  funnel: FunnelCounts;
+  daily: { plan: number[]; actual: number[] };
+  sources: [string, number][];
+  geo: { code: string; flag: string; count: number }[];
+  tiers: Record<'S' | 'A' | 'B' | 'C', number>;
+  savings: typeof SAVINGS;
+  reminders: number;
 }
 
-function reached(rows: LeadRow[], field: keyof LeadRow): number {
-  return rows.filter((r) => r[field]).length;
-}
-
-function pct(a: number, b: number): number | null {
-  if (!b) return null;
-  return a / b;
-}
-
-export function computeStats(rows: LeadRow[], now = Date.now()): Stats {
-  const funnel: FunnelStage[] = STATUS_FLOW.map((s, idx) => {
-    const field = s === 'new' ? 'created_at' : `${s}_at`;
-    const n = s === 'new' ? rows.length : reached(rows, field as keyof LeadRow);
-    const prev = idx === 0 ? null : funnelPrev(rows, STATUS_FLOW[idx - 1]);
-    return {
-      status: s,
-      label: STATUS_LABELS[s],
-      reached: n,
-      convFromPrev: idx === 0 || prev === null ? null : pct(n, prev),
-    };
-  });
-
-  const channels = [...new Set(rows.map((r) => r.channel))];
-  const byChannel: ChannelRow[] = channels
-    .map((ch) => {
-      const sub = rows.filter((r) => r.channel === ch);
-      const contacted = reached(sub, 'contacted_at');
-      const replied = reached(sub, 'replied_at');
-      return {
-        channel: ch,
-        label: channelLabel(ch),
-        leads: sub.length,
-        contacted,
-        replied,
-        applied: reached(sub, 'applied_at'),
-        onboarded: reached(sub, 'onboarded_at'),
-        replyRate: pct(replied, contacted),
-      };
-    })
-    .sort((a, b) => b.leads - a.leads);
-
-  // 冲刺起点 = 最早 created_at；按自然日切 D1/D2/D3
-  const startTs = rows.length ? Math.min(...rows.map((r) => new Date(r.created_at).getTime())) : now;
-  const dayMs = 24 * 3600_000;
-  const pace: PaceDay[] = [1, 2, 3].map((d) => {
-    const from = startTs + (d - 1) * dayMs;
-    const to = startTs + d * dayMs;
-    const n = rows.filter((r) => {
-      if (!r.onboarded_at) return false;
-      const t = new Date(r.onboarded_at).getTime();
-      return t >= from && t < to;
-    }).length;
-    const date = new Date(from).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
-    return { day: `D${d}`, date, onboarded: n, targetCum: TARGET_CUM[d - 1] };
-  });
-
-  const contacted = reached(rows, 'contacted_at');
-  const replied = reached(rows, 'replied_at');
-  const applied = reached(rows, 'applied_at');
-  const sampleDone = reached(rows, 'sample_done_at');
-  const offered = reached(rows, 'offered_at');
-  const onboarded = reached(rows, 'onboarded_at');
-
-  const followupsDue = rows.filter(
-    (r) => r.next_followup_at && new Date(r.next_followup_at).getTime() <= now && !['replied', 'onboarded', 'rejected'].includes(r.status)
+export function computeStats(L: Lead[], today = todayStr()): Stats {
+  const c = funnelCounts(L);
+  const geo = geoCounts(L).map(([code, count]) => ({ code, flag: countryByCode(code).flag, count }));
+  const reminders = L.filter(
+    (l) => l.next_followup_at && l.next_followup_at <= today && ['contacted', 'replied', 'qualified'].includes(l.status)
   ).length;
-
   return {
-    totals: {
-      leads: rows.length,
-      onboarded,
-      target: TARGET,
-      targetPct: pct(onboarded, TARGET) ?? 0,
-      followupsDue,
-      aTier: rows.filter((r) => r.tier === 'A').length,
-      currentDay: Math.min(3, Math.max(1, Math.floor((now - startTs) / dayMs) + 1)),
-      targetNow: TARGET_CUM[Math.min(2, Math.max(0, Math.floor((now - startTs) / dayMs)))],
+    kpi: {
+      ...c,
+      contactRate: c.leads ? Math.round((c.contacted / c.leads) * 100) : 0,
+      replyRate: c.contacted ? Math.round((c.replied / c.contacted) * 100) : 0,
+      qualRate: c.replied ? Math.round((c.qualified / c.replied) * 100) : 0,
+      onbRate: c.qualified ? Math.round((c.onboarded / c.qualified) * 100) : 0,
+      hotRate: c.leads ? Math.round((c.hot / c.leads) * 100) : 0,
     },
-    funnel,
-    byChannel,
-    pace,
-    rates: {
-      replyRate: pct(replied, contacted),
-      applyRate: pct(applied, replied),
-      sampleRate: pct(sampleDone, applied),
-      acceptRate: pct(onboarded, offered),
-    },
+    funnel: c,
+    daily: { plan: DAILY_PLAN, actual: dailyActual(L, today) },
+    sources: sourceCounts(L),
+    geo,
+    tiers: tierCounts(L),
+    savings: SAVINGS,
+    reminders,
   };
-}
-
-function funnelPrev(rows: LeadRow[], s: Status): number {
-  if (s === 'new') return rows.length;
-  const field = `${s}_at`;
-  return reached(rows, field as keyof LeadRow);
 }

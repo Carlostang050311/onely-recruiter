@@ -1,4 +1,4 @@
-// POST /api/seed → 清库重灌演示数据（演示/录像用）
+// POST /api/seed → 清库重灌演示数据
 import { NextResponse } from 'next/server';
 import { getDb, resetDb } from '../../../lib/db';
 

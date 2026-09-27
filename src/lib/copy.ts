@@ -1,103 +1,137 @@
-// 个性化触达文案：渠道模板 + 线索变量，D0 首触 / D1 提醒 / D2 最后召集。
-// 定位统一用 Onely 官方口径："creator fan-relationship operations"。
-// LLM 改写为浏览器端可选增强（在触达页配置中转站直连），服务端不做任意 URL 请求。
+// 触达文案 v2 —— 6 渠道模板 + D+2/D+4 跟进 bump + 按线索经历信号插入个性化钩子。
 
-import type { LeadRow } from './types';
-import { safeParsePlatforms } from './scoring';
+import type { Lead } from './types';
+import { countryByCode, PLATFORM_LABEL } from './types';
 
-export type FollowupDay = 0 | 1 | 2;
+export const TELEGRAM_HANDLE = '@onely_ops';
+export const DISCORD_LINK = 'https://discord.gg/onely-ops';
+export const WEBSITE = 'https://www.onely.cc';
 
-export const DAY_LABELS: Record<FollowupDay, string> = {
-  0: 'D0 首触',
-  1: 'D1 提醒',
-  2: 'D2 最后召集',
-};
-
-interface ChannelStyle {
-  /** 是否带主题行（偏邮件/站内信的渠道） */
-  subject: boolean;
-}
-
-const CHANNEL_STYLE: Record<string, ChannelStyle> = {
-  telegram_community: { subject: false },
-  discord_community: { subject: false },
-  facebook_group: { subject: false },
-  twitter: { subject: false },
-  linkedin: { subject: true },
-  onlinejobs: { subject: true },
-  upwork: { subject: true },
-  referral: { subject: false },
-};
-
-function vars(lead: Pick<LeadRow, 'first_name' | 'location' | 'platforms' | 'niche'>) {
-  const platforms = safeParsePlatforms(lead.platforms);
-  return {
-    first_name: lead.first_name || 'there',
-    location: (lead.location || 'your area').trim(),
-    platforms: platforms.slice(0, 2).join(' & ') || 'social media',
-    niche: lead.niche || 'creator',
-  };
-}
-
-function day0(
-  v: ReturnType<typeof vars>,
-  lead: Pick<LeadRow, 'channel'>
-): { subject?: string; body: string } {
-  switch (lead.channel) {
-    case 'linkedin':
-      return {
-        subject: 'Fan-relationship operator role — US creators (weekly pay)',
-        body: `Hi ${v.first_name}, I'm recruiting operators for Onely (onely.cc), an AI-powered creator platform. Your ${v.platforms} work for US/EU creators stood out. The role: run fan-relationship workflows for US creators on US-hours shifts. Weekly pay, structured training, playbook provided. Would you be open to a quick chat this week?`,
-      };
-    case 'onlinejobs':
-      return {
-        subject: 'Onely — Fan Relationship Operator (US shift, weekly pay, fully remote)',
-        body: `Hi ${v.first_name},\n\nWe're Onely (onely.cc), an AI-powered creator business platform. We're building our first operator cohort in ${v.location}: running fan-relationship workflows for US creators (replies, welcomes, nurturing — the "relationship" side of the creator business loop).\n\nWhy you: your profile shows ${v.platforms} experience, and that's the core of this job. We provide the playbook, persona training, and QA coaching.\n\n- US-hours shift, fully remote\n- Weekly pay via Payoneer/Wise\n- Start: this week, first cohort\n\nCould you complete our 5-min application form? Top applicants get a paid sample task the same day.`,
-      };
-    case 'upwork':
-      return {
-        subject: 'Invitation — Fan Relationship Operator for US creators (Onely)',
-        body: `Hi ${v.first_name},\n\nOnely (onely.cc) is an AI-powered creator business platform. We're inviting experienced ${v.platforms} freelancers to join our operator cohort: running fan-relationship workflows for US creators on US-hours shifts. Weekly pay, full training, long-term volume. If this sounds like your lane, happy to send the brief and a paid sample task.`,
-      };
-    default:
-      return {
-        body: `Hi ${v.first_name}! I'm with Onely (onely.cc), an AI-powered creator business platform. We're hiring experienced social-media operators in ${v.location} to run fan-relationship workflows for US creators — ${v.platforms} background like yours is exactly what we look for. US-hours shifts, weekly pay, full training provided. Open to a 3-min overview?`,
-      };
-  }
-}
-
-function day1(v: ReturnType<typeof vars>): { subject?: string; body: string } {
-  return {
-    subject: 'Re: Fan-relationship operator role — cohort fills this week',
-    body: `Quick nudge, ${v.first_name} — we're locking the first operator cohort this week and ${v.location} slots are going fast. If the fan-relationship role for US creators sounds interesting, the 5-min form takes one coffee break. Happy to answer questions here too.`,
-  };
-}
-
-function day2(v: ReturnType<typeof vars>): { subject?: string; body: string } {
-  return {
-    subject: 'Last call — Onely operator cohort closes tonight',
-    body: `Last call, ${v.first_name}! Operator applications close tonight (first cohort, US creators, weekly pay). If you know the ${v.platforms} grind, this is the steady version of it: playbook, training, and QA support included. Form takes 5 minutes — would love to see you in cohort one.`,
-  };
-}
-
-export interface GeneratedMessage {
-  subject?: string;
+export interface Template {
+  subject: string;
   body: string;
-  day: FollowupDay;
-  channel: string;
 }
 
-export function generateMessage(
-  lead: Pick<LeadRow, 'first_name' | 'location' | 'platforms' | 'niche' | 'channel' | 'handle'>,
-  day: FollowupDay
-): GeneratedMessage {
-  const v = vars(lead);
-  const gen = day === 0 ? day0(v, lead) : day === 1 ? day1(v) : day2(v);
-  const style = CHANNEL_STYLE[lead.channel] ?? { subject: false };
-  return {
-    subject: style.subject ? gen.subject : undefined,
-    body: gen.body,
-    day,
-    channel: lead.channel,
+export const TEMPLATES: Record<string, Template> = {
+  email: {
+    subject: "Onely operator role — running US creator accounts (for {{first_name}})",
+    body: `Hi {{first_name}},
+
+{{hook_sentence}} I think you'd be a strong fit for Onely's first operator cohort.
+
+Onely is an AI-powered creator business platform in private beta with US and European creators (onely.cc). We're onboarding our first 100 operators to run TikTok / Instagram companion accounts — the same kind of social growth and fan-relationship work you already do, except AI drafts the content, schedules posts and tracks revenue for you.
+
+What operators get:
+- $300–800/month per account, paid weekly, with a transparent revenue dashboard
+- AI studio that cuts content production time by roughly 70%
+- Flexible async hours, a structured 3-day bootcamp, and a team lead for every 20 operators
+- Multiple accounts for operators who perform
+
+Would you be open to a 15-minute chat this week? Reply here, or message us on Telegram {{telegram_handle}} and I'll send the one-page program doc + booking link.
+
+Best,
+Onely Operator Team
+{{website}}`,
+  },
+  facebook: {
+    subject: '',
+    body: `Hi {{first_name}} — {{hook_short}}, so I wanted to reach out personally.
+
+We're Onely, an AI-powered creator platform, and we're taking our first 100 operators to run TikTok/Instagram companion accounts for US & European creators. It's paid weekly ($300–800/mo per account), async, and AI handles most content production.
+
+Open to a quick chat? I can send the one-pager here, or find us on Telegram {{telegram_handle}}. Thanks!`,
+  },
+  linkedin: {
+    subject: '',
+    body: `Hi {{first_name}}, I came across your work — {{hook_short}}. 
+
+I lead operator growth at Onely, an AI-powered creator business platform. We're selecting our first 100 operators to grow companion accounts for Western creators: weekly pay per account, AI doing the heavy lifting on content, flexible hours.
+
+Given your background, I'd love 15 minutes to share the program. Open to it? I can message you the details here or on Telegram {{telegram_handle}}.`,
+  },
+  telegram: {
+    subject: '',
+    body: `Hi {{first_name}} 👋 {{hook_short}} — we'd love to have you in Onely's first operator cohort.
+
+We run TikTok/IG companion accounts for US & European creators. Operators earn $300–800/mo per account, paid weekly, AI handles content drafts. Async + free 3-day training.
+
+Interested? Reply "YES" and I'll send the signup + booking link. Info: {{website}}`,
+  },
+  whatsapp: {
+    subject: '',
+    body: `Hi {{first_name}}, this is the Onely operator team. {{hook_short}} We're hiring 100 operators to run TikTok/Instagram companion accounts for US creators — $300–800/mo per account, weekly payouts, AI assists with content, flexible hours. Can I send the one-page info? Reply YES.`,
+  },
+  x: {
+    subject: '',
+    body: `Hi {{first_name}} — {{hook_short}} We're onboarding 100 operators to run companion accounts for US/EU creators ($300–800/mo per account, weekly pay, AI does content drafts). Worth a quick look? DM "YES" or Telegram {{telegram_handle}}.`,
+  },
+};
+
+export const BUMPS: string[] = [
+  `Hi {{first_name}}, floating this back up — we're filling the first 100 operator seats this week and yours is one I'd like to hold. A few operators from {{country_name}} already started and received their first payout within 7 days. Want the signup link?`,
+  `Last one from me, {{first_name}} — applications for cohort 1 close tomorrow. If now isn't a good time, we also pay a $25 referral bonus for every operator you refer who stays 30 days. Either way, wishing you well! Telegram: {{telegram_handle}}`,
+];
+
+export const VAR_NAMES = [
+  'first_name',
+  'country_name',
+  'platforms',
+  'us_years',
+  'role',
+  'source',
+  'city',
+  'hook_sentence',
+  'hook_short',
+  'telegram_handle',
+  'website',
+];
+
+/** 按线索经历信号生成个性化钩子 */
+export function personalHooks(l: Lead): string[] {
+  const h: string[] = [];
+  if (l.rating >= 90) h.push('loved your ' + l.rating + ' client rating on ' + l.source);
+  if (l.platforms.includes('tiktok')) h.push('your TikTok growth work for Western creators');
+  if ((l.role + l.notes).indexOf('陪伴') >= 0 || (l.role + l.notes).indexOf('companion') >= 0)
+    h.push('your experience running companion-style accounts');
+  if (l.notes.indexOf('10 万') >= 0 || l.notes.indexOf('100k') >= 0 || l.notes.indexOf('10万') >= 0)
+    h.push('you taking accounts from 0 past 100k followers');
+  if (l.source === 'X (Twitter)') h.push('your X growth work for international clients');
+  if (l.ai_tools) h.push('that you already work with AI tools');
+  if ((l.skills || []).includes('DM 转化')) h.push('your DM-to-paid conversion experience');
+  if (l.us_years >= 3) h.push('your ' + l.us_years + ' years running accounts for the US market');
+  if (!h.length) h.push('your experience managing social for US and European creators');
+  return h;
+}
+
+export interface BuiltMessage {
+  subject: string;
+  body: string;
+}
+
+/** seq: 0 首触 / 1 D+2 轻推 / 2 D+4 最后触达 */
+export function buildMessage(l: Lead, channelKey: string, seq = 0, templates = TEMPLATES): BuiltMessage {
+  let tpl: Template;
+  if (seq === 1) tpl = { subject: '', body: BUMPS[0] };
+  else if (seq === 2) tpl = { subject: '', body: BUMPS[1] };
+  else tpl = templates[channelKey] || templates.email;
+
+  const hooks = personalHooks(l);
+  const hookSentence = 'I saw ' + hooks[0] + (hooks[1] ? ' and ' + hooks[1] : '') + ',';
+  const hookShort = hooks[0];
+  const vars: Record<string, string | number> = {
+    first_name: l.name.split(' ')[0],
+    country_name: countryByCode(l.country).name,
+    platforms: (l.platforms || []).map((p) => PLATFORM_LABEL[p] || p).join(' & ') || 'social',
+    us_years: l.us_years || 0,
+    role: l.role || 'social media manager',
+    source: l.source,
+    city: l.city || '',
+    hook_sentence: hookSentence,
+    hook_short: hookShort,
+    telegram_handle: TELEGRAM_HANDLE,
+    discord_link: DISCORD_LINK,
+    website: WEBSITE,
   };
+  const fill = (s: string) => s.replace(/\{\{(\w+)\}\}/g, (m, k) => (vars[k] !== undefined ? String(vars[k]) : m));
+  return { subject: tpl.subject ? fill(tpl.subject) : '', body: fill(tpl.body) };
 }

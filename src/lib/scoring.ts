@@ -1,115 +1,86 @@
-// 评分与分级。满分 100，权重见 AGENTS.md。
-// A ≥75 当天直发 offer；B 55–74 备选池滚动补位；C <55 淘汰或转内容岗。
+// 评分模型 v2 —— 与参照稿一致的 7 维 100 分制。
+// 分级：S ≥85（首批直聊）· A 70–84 · B 55–69（waitlist/补训）· C <55（婉拒）
 
-import type { Tier } from './types';
+import type { Lead, Tier } from './types';
+import { PLATFORM_LABEL } from './types';
 
-export const CHANNEL_WEIGHT: Record<string, number> = {
-  telegram_community: 12,
-  referral: 11,
-  discord_community: 11,
-  onlinejobs: 10,
-  linkedin: 10,
-  facebook_group: 8,
-  twitter: 8,
-  upwork: 6,
-};
+export interface ScorePart {
+  k: string; // 维度名
+  w: number; // 满分
+  v: number; // 得分
+  d: string; // 依据描述
+}
 
-const PLATFORM_BONUS = 5; // 每个平台 +5，封顶 15
-export const TIER_A = 75;
+export const TIER_S = 85;
+export const TIER_A = 70;
 export const TIER_B = 55;
 
-export interface ScoreResult {
-  score: number;
-  tier: Tier;
-  reasons: string[]; // 加分点说明，供 UI 展示
+type Scorable = Pick<
+  Lead,
+  'platforms' | 'us_years' | 'english' | 'rating' | 'timezone_overlap' | 'hours_per_week' | 'ai_tools'
+>;
+
+export function scoreParts(l: Scorable): ScorePart[] {
+  const p = l.platforms || [];
+  const parts: ScorePart[] = [];
+
+  const y = +l.us_years || 0;
+  parts.push({
+    k: '美国/欧洲创作者运营经验',
+    w: 24,
+    v: y >= 3 ? 24 : y === 2 ? 19 : y === 1 ? 13 : y > 0 ? 6 : 0,
+    d: y + ' 年',
+  });
+
+  const hasT = p.includes('tiktok');
+  const hasI = p.includes('instagram');
+  parts.push({
+    k: 'TikTok / Instagram 平台匹配',
+    w: 16,
+    v: hasT && hasI ? 16 : hasT || hasI ? 10 : 4,
+    d: p.map((x) => PLATFORM_LABEL[x] || x).join('、') || '无',
+  });
+
+  const e = l.english === 'native' ? 15 : l.english === 'fluent' ? 11 : 6;
+  parts.push({
+    k: '英语写作能力',
+    w: 15,
+    v: e,
+    d: l.english === 'native' ? '母语级' : l.english === 'fluent' ? '流利' : '日常交流',
+  });
+
+  const r = +l.rating || 0;
+  parts.push({
+    k: '平台评分 / 好评率',
+    w: 15,
+    v: r >= 90 ? 15 : r >= 80 ? 12 : r >= 70 ? 8 : r > 0 ? 4 : 6,
+    d: r ? r + ' 分' : '无记录',
+  });
+
+  const tz = +l.timezone_overlap || 0;
+  parts.push({ k: '美国时区重叠时长', w: 10, v: tz >= 4 ? 10 : tz >= 2 ? 7 : 3, d: tz + ' 小时' });
+
+  const h = +l.hours_per_week || 0;
+  parts.push({ k: '每周可投入小时', w: 10, v: h >= 30 ? 10 : h >= 15 ? 8 : h >= 5 ? 5 : 2, d: h + ' 小时' });
+
+  parts.push({
+    k: 'AI 工具熟练度',
+    w: 10,
+    v: l.ai_tools ? 10 : 4,
+    d: l.ai_tools ? '熟练使用 ChatGPT/CapCut 等' : '未声明',
+  });
+
+  return parts;
 }
 
-/** 宽松入参：库行（platforms 为 JSON 字符串）与导入中间结构（string[]）都能直接打分 */
-export interface Scorable {
-  channel: string;
-  platforms: string[] | string;
-  us_clients_exp?: unknown;
-  chat_exp?: unknown;
-  crm_exp?: unknown;
-  hours_per_week?: number | string;
-  us_shift?: unknown;
-  english_sample?: number | string;
+export function tierOf(score: number): Tier {
+  return score >= TIER_S ? 'S' : score >= TIER_A ? 'A' : score >= TIER_B ? 'B' : 'C';
 }
 
-function bool(v: unknown): boolean {
-  if (typeof v === 'boolean') return v;
-  if (typeof v === 'number') return v !== 0;
-  if (typeof v === 'string') return ['1', 'true', 'yes', 'y', '√', '是'].includes(v.trim().toLowerCase());
-  return false;
-}
-
-export function scoreLead(lead: Scorable): ScoreResult {
-  let score = 0;
-  const reasons: string[] = [];
-
-  const cw = CHANNEL_WEIGHT[lead.channel] ?? 5;
-  score += cw;
-
-  const platforms: string[] = Array.isArray(lead.platforms)
-    ? (lead.platforms as unknown as string[])
-    : safeParsePlatforms(lead.platforms);
-  const platCount = Math.min(platforms.length, 3);
-  if (platCount > 0) score += platCount * PLATFORM_BONUS;
-
-  if (bool(lead.us_clients_exp)) {
-    score += 18;
-    reasons.push('有美区/欧区客户运营经验 +18');
-  }
-  if (bool(lead.us_shift)) {
-    score += 15;
-    reasons.push('能上美区班次 +15');
-  }
-  const h = Number(lead.hours_per_week) || 0;
-  if (h >= 30) {
-    score += 10;
-    reasons.push(`每周可投入 ${h} 小时 +10`);
-  } else if (h >= 20) {
-    score += 7;
-    reasons.push(`每周可投入 ${h} 小时 +7`);
-  } else if (h >= 10) {
-    score += 3;
-  }
-  const eng = Math.max(0, Math.min(25, Number(lead.english_sample) || 0));
-  if (eng > 0) {
-    score += eng;
-    if (eng >= 18) reasons.push(`英文样题 ${eng}/25 +${eng}`);
-  }
-  if (bool(lead.chat_exp)) {
-    score += 7;
-    reasons.push('有粉丝聊天/互动经验 +7');
-  }
-  if (bool(lead.crm_exp)) {
-    score += 3;
-    reasons.push('用过 CRM/消息后台 +3');
-  }
-  if (platforms.length > 0) {
-    reasons.push(`平台覆盖：${platforms.join(', ')} +${platCount * PLATFORM_BONUS}`);
-  }
-  reasons.push(`渠道权重（${lead.channel}）+${cw}`);
-
-  score = Math.max(0, Math.min(100, Math.round(score)));
-  const tier: Tier = score >= TIER_A ? 'A' : score >= TIER_B ? 'B' : 'C';
-  return { score, tier, reasons };
-}
-
-export function safeParsePlatforms(v: unknown): string[] {
-  if (Array.isArray(v)) return v.map(String);
-  if (typeof v === 'string' && v.trim() !== '') {
-    try {
-      const parsed = JSON.parse(v);
-      if (Array.isArray(parsed)) return parsed.map(String);
-    } catch {
-      // 允许分号/逗号分隔的裸字符串
-      return v
-        .split(/[,;，；]/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-  }
-  return [];
+/** 就地打分并返回明细 */
+export function grade(l: Scorable & { score: number; tier: Tier }): ScorePart[] {
+  const parts = scoreParts(l);
+  l.score = parts.reduce((s, x) => s + x.v, 0);
+  l.tier = tierOf(l.score);
+  return parts;
 }

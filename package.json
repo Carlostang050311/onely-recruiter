@@ -12,6 +12,7 @@
     "video": "node scripts/make-video.mjs"
   },
   "dependencies": {
+    "echarts": "^5.5.1",
     "framer-motion": "^13.4.4",
     "next": "^15.5.0",
     "react": "^19.1.0",

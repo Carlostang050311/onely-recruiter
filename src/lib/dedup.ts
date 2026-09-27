@@ -1,120 +1,50 @@
-// 线索去重：归一化 email / handle / 姓名+地区 三级匹配。
-// 规则（满足其一即判重）：
-//   1. email 完全一致（两侧都非空，小写去空白）
-//   2. handle 一致（去 @、去平台 URL 前缀、小写）
-//   3. 姓名键一致 且 地区一致（兜底：同一人换了邮箱和号）
+// 去重 v2 —— 三键归一化：email（忽略大小写）→ profile_url（归一化域名/尾斜杠/查询串）→ phone（仅数字取后 10 位）。
+// 语义为「合并」：重复记录并入最早一条，dup_count++，来源与备注拼接，并写一条合并动态。
 
-import type { LeadInput } from './types';
+import type { Activity, Lead } from './types';
+import { todayStr } from './types';
 
-export function normalizeEmail(v?: string | null): string {
-  return (v ?? '').trim().toLowerCase();
+export function normEmail(e?: string | null): string {
+  return (e ?? '').trim().toLowerCase();
 }
 
-export function normalizeHandle(v?: string | null): string {
-  let s = (v ?? '').trim().toLowerCase();
-  if (!s) return '';
-  // 去掉 URL 前缀：https://x.com/abc → abc
-  const slash = s.lastIndexOf('/');
-  if (s.includes('://') || (slash !== -1 && s.includes('.'))) s = s.slice(slash + 1);
-  return s.replace(/^@+/, '').trim();
+export function normUrl(u?: string | null): string {
+  return (u ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/+$/, '')
+    .split('?')[0];
 }
 
-export function nameKey(first?: string | null, last?: string | null): string {
-  return `${first ?? ''}${last ?? ''}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+export function normPhone(p?: string | null): string {
+  const d = (p ?? '').replace(/\D/g, '');
+  return d.length > 10 ? d.slice(-10) : d;
 }
 
-export interface DedupReportItem {
-  row: number; // 文件内第几条数据（1 起）
-  name: string;
-  matchedKey: 'email' | 'handle' | 'name_location';
-  matchedValue: string;
-  against: string; // 'file:<row>' 或 'db:<id>'
+export function dedupKey(l: { email?: string | null; profile_url?: string | null; phone?: string | null }): string | null {
+  if (l.email && normEmail(l.email)) return 'e:' + normEmail(l.email);
+  if (l.profile_url && normUrl(l.profile_url)) return 'u:' + normUrl(l.profile_url);
+  if (l.phone && normPhone(l.phone)) return 'p:' + normPhone(l.phone);
+  return null;
 }
 
-export interface DedupResult {
-  kept: LeadInput[];
-  duplicates: DedupReportItem[];
+export interface MergeResult {
+  merged: boolean;
+  key: string | null;
 }
 
-interface Dedupable {
-  email?: string | null;
-  handle?: string | null;
-  first_name?: string | null;
-  last_name?: string | null;
-  location?: string | null;
-}
-
-interface DbLike {
-  id: number;
-  email: string | null;
-  handle: string | null;
-  first_name: string;
-  last_name: string;
-  location: string | null;
-}
-
-function keysOf(x: Dedupable) {
-  return {
-    email: normalizeEmail(x.email),
-    handle: normalizeHandle(x.handle),
-    nameLoc: nameKey(x.first_name, x.last_name)
-      ? `${nameKey(x.first_name, x.last_name)}|${(x.location ?? '').trim().toLowerCase()}`
-      : '',
-  };
-}
-
-/**
- * 对一批导入线索去重：
- * 1) 批内去重（同批撞车保留先出现的）
- * 2) 与库内已有线索去重（existing 传入当前库全量的 id/email/handle/name/location）
- */
-export function dedupLeads(
-  incoming: (LeadInput & { _row?: number })[],
-  existing: DbLike[]
-): DedupResult {
-  const kept: LeadInput[] = [];
-  const duplicates: DedupReportItem[] = [];
-  const seen: { keys: ReturnType<typeof keysOf>; label: string }[] = [];
-
-  for (const e of existing) {
-    seen.push({ keys: keysOf(e), label: `db:${e.id}` });
+/** 把 incoming 合并进 existing（existing 为库内最早一条）。返回是否合并及命中键。 */
+export function mergeInto(existing: Lead, incoming: Lead, day = todayStr()): MergeResult {
+  const key = dedupKey(incoming);
+  if (!key) return { merged: false, key: null };
+  existing.dup_count = (existing.dup_count || 0) + 1;
+  if (incoming.source && existing.source.indexOf(incoming.source) < 0) {
+    existing.source = existing.source + ' + ' + incoming.source;
   }
-
-  for (const lead of incoming) {
-    const k = keysOf(lead);
-    let dup: { matchedKey: 'email' | 'handle' | 'name_location'; matchedValue: string; against: string } | null =
-      null;
-
-    if (k.email && seen.some((s) => s.keys.email && s.keys.email === k.email)) {
-      dup = { matchedKey: 'email', matchedValue: k.email, against: seen.find((s) => s.keys.email === k.email)!.label };
-    } else if (k.handle && seen.some((s) => s.keys.handle && s.keys.handle === k.handle)) {
-      dup = {
-        matchedKey: 'handle',
-        matchedValue: k.handle,
-        against: seen.find((s) => s.keys.handle === k.handle)!.label,
-      };
-    } else if (k.nameLoc && seen.some((s) => s.keys.nameLoc && s.keys.nameLoc === k.nameLoc)) {
-      dup = {
-        matchedKey: 'name_location',
-        matchedValue: k.nameLoc,
-        against: seen.find((s) => s.keys.nameLoc === k.nameLoc)!.label,
-      };
-    }
-
-    if (dup) {
-      duplicates.push({
-        row: lead._row ?? 0,
-        name: `${lead.first_name} ${lead.last_name ?? ''}`.trim(),
-        matchedKey: dup.matchedKey,
-        matchedValue: dup.matchedValue,
-        against: dup.against,
-      });
-    } else {
-      const { _row, ...clean } = lead;
-      kept.push(clean as LeadInput);
-      seen.push({ keys: k, label: `file:${_row ?? kept.length}` });
-    }
-  }
-
-  return { kept, duplicates };
+  if (incoming.notes) existing.notes = (existing.notes ? existing.notes + '；' : '') + incoming.notes;
+  const act: Activity = { t: day, text: '导入时合并 1 条重复记录（' + (incoming.source || '重复键') + '）' };
+  existing.activities = [act, ...existing.activities];
+  return { merged: true, key };
 }

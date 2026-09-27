@@ -1,22 +1,30 @@
 import type { Metadata } from 'next';
 import Nav from '../components/Nav';
+import Topbar from '../components/Topbar';
 import Providers from '../components/Providers';
 import RouteFade from '../components/RouteFade';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Onely Recruiter — Operator 招募冲刺',
-  description: 'Onely 情感陪伴业务 Operator 三天百人招募原型：导入去重 / 评分分级 / 个性化触达 / 跟进看板 / 漏斗数据',
+  title: 'Onely 运营招募作战台 · Operator Growth Console',
+  description: 'Onely 情感陪伴业务 Operator 三天百人招募原型：导入去重 / 评分分级 / 个性化触达 / 跟进看板 / 增长方案',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="zh-CN">
       <body>
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap"
+        />
         <Providers>
-          <div className="shell">
+          <div className="app">
             <Nav />
-            <RouteFade>{children}</RouteFade>
+            <div className="main">
+              <Topbar />
+              <RouteFade>{children}</RouteFade>
+            </div>
           </div>
         </Providers>
       </body>

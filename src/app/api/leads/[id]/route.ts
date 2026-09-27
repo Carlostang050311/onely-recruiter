@@ -1,52 +1,45 @@
-// PATCH /api/leads/[id]  body: { status?: string, notes?: string }
-// 推进状态时写入对应时间戳，并维护跟进提醒。
+// PATCH /api/leads/[id] —— 抽屉「编辑」保存 / 状态直改；保存后重新评分并记动态
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '../../../../lib/db';
-import type { LeadRow, Status } from '../../../../lib/types';
-import { STATUS_TS } from '../../../../lib/types';
+import { getLead, saveLead, regrade, addActivity, setStatus } from '../../../../lib/store';
+import type { Lead, Status } from '../../../../lib/types';
+import { ALL_PLATFORMS, STATUSES } from '../../../../lib/types';
 
 export const dynamic = 'force-dynamic';
 
+const EDITABLE = [
+  'name', 'country', 'city', 'source', 'profile_url', 'email', 'phone', 'telegram',
+  'us_years', 'english', 'rating', 'hours_per_week', 'timezone_overlap', 'ai_tools',
+  'role', 'client_type', 'notes',
+] as const;
+
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  const leadId = Number(id);
-  if (!Number.isInteger(leadId)) return NextResponse.json({ error: 'bad id' }, { status: 400 });
-
   const db = getDb();
-  const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(leadId) as LeadRow | undefined;
+  const lead = getLead(db, id);
   if (!lead) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
-  const body = (await req.json()) as { status?: Status; notes?: string };
-  const now = new Date().toISOString();
-  const updates: string[] = [];
-  const args: (string | number | null)[] = [];
+  const body = (await req.json()) as Record<string, unknown> & { platforms?: string | string[]; status?: Status };
 
-  if (body.status) {
-    updates.push('status = ?');
-    args.push(body.status);
-    const tsField = body.status !== 'new' ? STATUS_TS[body.status] : null;
-    if (tsField && !lead[tsField as keyof LeadRow]) {
-      updates.push(`${tsField} = ?`);
-      args.push(now);
-    }
-    if (body.status === 'contacted' && !lead.next_followup_at) {
-      updates.push('next_followup_at = ?');
-      args.push(new Date(Date.now() + 24 * 3600_000).toISOString());
-    }
-    if (['replied', 'onboarded', 'rejected'].includes(body.status) && lead.next_followup_at) {
-      updates.push('next_followup_at = ?');
-      args.push(null);
+  for (const k of EDITABLE) {
+    if (body[k] !== undefined) {
+      (lead as unknown as Record<string, unknown>)[k] = body[k] as never;
     }
   }
-  if (typeof body.notes === 'string') {
-    updates.push('notes = ?');
-    args.push(body.notes);
+  if (body.platforms !== undefined) {
+    const arr = Array.isArray(body.platforms)
+      ? body.platforms
+      : String(body.platforms).split(',').map((s) => s.trim().toLowerCase());
+    lead.platforms = arr.filter((s) => ALL_PLATFORMS.includes(s));
+  }
+  if (body.status && STATUSES.some((s) => s.key === body.status)) {
+    setStatus(lead, body.status);
   }
 
-  if (updates.length) {
-    args.push(leadId);
-    db.prepare(`UPDATE leads SET ${updates.join(', ')} WHERE id = ?`).run(...args);
+  regrade(lead);
+  if (Object.keys(body).some((k) => EDITABLE.includes(k as (typeof EDITABLE)[number]) || k === 'platforms')) {
+    addActivity(lead, '资料编辑并重新评分：' + lead.score + ' 分（' + lead.tier + '）');
   }
-  const updated = db.prepare('SELECT * FROM leads WHERE id = ?').get(leadId) as unknown as LeadRow;
-  return NextResponse.json({ lead: updated });
+  saveLead(db, lead);
+  return NextResponse.json({ lead });
 }

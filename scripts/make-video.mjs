@@ -1,106 +1,121 @@
-// 演示视频生成：分节录屏(Playwright) + edge-tts 配音(失败回落 Windows SAPI) + ffmpeg 合成。
+// 演示视频生成 v2：六视图分节录屏(Playwright) + edge-tts 配音 + ffmpeg 合成。
 // 前置：npm run build && npm run start（http://localhost:3777）。
 // 用法：node scripts/make-video.mjs
 import { chromium } from 'playwright';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const BASE = 'http://localhost:3777';
 const RAW = 'demo/raw';
 const OUT = 'demo/onely-recruiter-demo.mp4';
 mkdirSync(RAW, { recursive: true });
-for (const f of ['tts-test.mp3']) if (existsSync(`${RAW}/${f}`)) rmSync(`${RAW}/${f}`);
 
 const SECTIONS = [
   {
     id: 's1',
     narration:
-      '这是 Onely Recruiter，为 Onely 情感陪伴业务三天招募一百名海外运营者的自动化原型。左侧四个模块：数据看板、线索与导入、跟进看板、触达文案。冲刺进行到第三天上午：一百三十四条有效线索，六十一人已入驻，距离一百人的目标还差三十九人；十二条跟进今天到期。看板漏斗按到达过该阶段统计，从新线索到已入驻，每一级转化率实时可见。',
+      '这是 Onely 运营招募作战台，为情感陪伴业务三天入驻一百名海外运营者而生的作战控制台。左侧六个视图：作战仪表盘、线索库与分级、跟进看板、触达文案台、三天增长方案、范围与假设。仪表盘六项指标：五十四条有效线索、三十七条已触达、二十二条已回复、十三条通过筛选、七条已入驻、二十九条 S 加 A 高优。转化漏斗、每日入驻节奏、来源与地区分布、能力分级、以及自动化降本测算，全部实时渲染。',
     act: async (page) => {
       await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-      await page.waitForTimeout(1200);
-      await page.mouse.wheel(0, 500);
+      await page.waitForTimeout(1500);
+      await page.mouse.wheel(0, 600);
       await page.waitForTimeout(1600);
-      await page.mouse.wheel(0, 700);
+      await page.mouse.wheel(0, 800);
       await page.waitForTimeout(1600);
-      await page.mouse.wheel(0, -1600);
-      await page.waitForTimeout(600);
+      await page.mouse.wheel(0, -2400);
+      await page.waitForTimeout(700);
     },
   },
   {
     id: 's2',
     narration:
-      '先看线索导入。粘贴一份十行的 CSV，线索来自 Telegram 社群、OnlineJobs.ph、Facebook 群组等八个渠道。点击导入，系统做三级去重：一条与库内记录邮箱撞车，一条文件内社媒号大小写撞车，都被拦下并给出命中规则；其余八条入库，并立即完成评分和 A、B、C 分级。全程不需要人工清洗。',
+      '线索库与分级。点击导入线索，载入演示 CSV——七行数据里藏着两条重复：一条邮箱大小写和链接尾斜杠不同，一条纯重复记录。点击导入并去重分级：系统按邮箱、主页链接、电话三个键归一化去重，重复记录合并进最早一条并打上合并标记，其余五条入库，并立即完成七维评分与 S A B C 分级。',
     act: async (page) => {
       await page.goto(`${BASE}/leads`, { waitUntil: 'networkidle' });
-      await page.waitForTimeout(900);
-      const csv = await (await fetch(`${BASE}/sample-leads.csv`)).text();
-      await page.locator('textarea').fill(csv);
-      await page.waitForTimeout(700);
-      await page.getByRole('button', { name: '导入粘贴内容' }).click();
-      await page.waitForTimeout(1600);
-      await page.locator('.report').scrollIntoViewIfNeeded();
       await page.waitForTimeout(1000);
+      await page.getByRole('button', { name: '导入线索' }).click();
+      await page.waitForTimeout(900);
+      await page.getByRole('button', { name: /载入演示 CSV/ }).click();
+      await page.waitForTimeout(700);
+      await page.getByRole('button', { name: '导入并去重分级' }).click();
+      await page.waitForTimeout(1600);
+      await page.getByRole('button', { name: '知道了' }).click();
+      await page.waitForTimeout(900);
     },
   },
   {
     id: 's3',
     narration:
-      '点开任意一行，是评分明细：美区客户经验加十八、美区班次加十五、平台覆盖、英文样题，逐项列清楚。A 级七十五分以上当天直发 Offer，B 级进备选池滚动补位，C 级淘汰或转内容岗。筛选支持状态、渠道、级别组合，整表可一键导出 CSV。',
+      '点击任意一行，右侧抽屉打开。评分与资料标签页列出七维评分明细：欧美创作者运营经验二十四分、TikTok 与 Instagram 平台匹配十六分、英语十五、平台评分十五、时区重叠十、每周工时十、AI 工具熟练度十。S 级八十五分以上首批直聊，C 级五十五分以下婉拒。编辑标签页可改资料，保存即自动重新评分。',
     act: async (page) => {
       await page.goto(`${BASE}/leads`, { waitUntil: 'networkidle' });
-      await page.waitForTimeout(900);
+      await page.waitForTimeout(1000);
       await page.locator('tbody tr').first().click();
-      await page.waitForTimeout(1400);
-      await page.locator('select').nth(2).selectOption('A');
       await page.waitForTimeout(1100);
-      await page.mouse.wheel(0, 400);
-      await page.waitForTimeout(700);
+      await page.getByRole('button', { name: '编辑', exact: true }).click();
+      await page.waitForTimeout(1200);
+      await page.getByRole('button', { name: '评分与资料' }).click();
+      await page.waitForTimeout(1000);
     },
   },
   {
     id: 's4',
     narration:
-      '跟进看板按七个阶段分列。标红的卡片是逾期待跟进：触达后没回复、或发了 Offer 没签的人，系统自动排了 D1 提醒和催签。运营在这里只做两个动作：推进状态、处理逾期。状态一变，时间戳自动写入，漏斗数据就由这些时间戳算出来。',
+      '跟进看板顶部是待跟进提醒：逾期红色、今日到期金色，点完成跟进就按原渠道发出下一轮跟进文案并重新排期。下方五个阶段的看板加流失列，卡片可以拖拽跨列，也可以用按钮推进；每一次阶段变化都会自动写进跟进动态时间线。',
     act: async (page) => {
       await page.goto(`${BASE}/pipeline`, { waitUntil: 'networkidle' });
-      await page.waitForTimeout(1100);
-      await page.mouse.wheel(0, 300);
-      await page.waitForTimeout(900);
-      await page.locator('.kcol').nth(1).getByRole('button', { name: /→/ }).first().click();
-      await page.waitForTimeout(1400);
-      await page.mouse.wheel(500, 0);
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(1200);
+      await page.locator('.rem-item button').first().click();
+      await page.waitForTimeout(1300);
+      await page.mouse.wheel(0, 500);
+      await page.waitForTimeout(1200);
+      await page.locator('.kcol').nth(1).getByRole('button', { name: /推进/ }).first().click();
+      await page.waitForTimeout(1200);
     },
   },
   {
     id: 's5',
     narration:
-      '触达文案页：选好目标人群、渠道和轮次，一键批量生成个性化文案。模板自动代入姓名、地区和候选人最熟的两个平台；LinkedIn 和 OnlineJobs 是带主题行的长信，社群渠道是短私信。D0 首触、D1 提醒、D2 最后召集，三轮语气各不相同。生成后可逐条复制、一键全部标记已触达；配置中转站后，浏览器还能再润色一遍。',
+      '触达文案台：左侧六个渠道模板和可点击的变量芯片；右侧选定线索后即时生成个性化文案——模板会按线索的经历信号自动插入个性化钩子，比如这位候选人的九十四分好评和 TikTok 增长经历。点模拟发送并排跟进，系统记录触达并自动排定 D 加 2 轻推；D 加 4 仍无回复则换钩子做最后触达，再无声就转流失。',
     act: async (page) => {
       await page.goto(`${BASE}/outreach`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(1100);
+      await page.mouse.wheel(0, 300);
+      await page.waitForTimeout(1000);
+      await page.getByRole('button', { name: /模拟发送并排跟进/ }).click();
+      await page.waitForTimeout(1400);
+      await page.mouse.wheel(0, 400);
       await page.waitForTimeout(900);
-      await page.getByRole('button', { name: /生成 \d+ 条文案/ }).click();
-      await page.waitForTimeout(2000);
-      await page.mouse.wheel(0, 500);
-      await page.waitForTimeout(1300);
-      await page.getByRole('button', { name: '复制' }).first().click();
-      await page.waitForTimeout(1300);
     },
   },
   {
     id: 's6',
     narration:
-      '最后回到看板：回复率、报名率、Offer 接受率一目了然；三日节奏对照三四、六七、一百的目标线。这套自动化把名单清洗、去重、文案、跟进排期和统计，从二十人团队的活压缩到三个人加一个工具；人只留下样题抽检、A B 边界判断、和在社群里当活人。这就是 Onely Recruiter。',
+      '三天增长方案页就是作战文档：漏斗数学按转化率反推一千二百条原始线索；十个渠道各有配额与入口；评分模型与硬门槛、红旗清单；三天作战时间轴；以及入驻后的 Discord 总部、Telegram 补位、三天 Bootcamp、留存成长与合规底座。范围与假设页把已实现功能和待验证假设两栏列清，进入真实战役前先小样本校准。',
+    act: async (page) => {
+      await page.goto(`${BASE}/plan`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(1200);
+      await page.mouse.wheel(0, 900);
+      await page.waitForTimeout(1400);
+      await page.mouse.wheel(0, 1200);
+      await page.waitForTimeout(1400);
+      await page.goto(`${BASE}/scope`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(1200);
+      await page.mouse.wheel(0, 700);
+      await page.waitForTimeout(1000);
+    },
+  },
+  {
+    id: 's7',
+    narration:
+      '最后回到仪表盘：以一千条有效线索的一期战役为口径，纯人工运营需要二百一十四点六小时，自动化之后十二点五小时，降幅百分之九十四；等效人力从九人降到零点五人。人只保留面试、异常处理、和在社群里当活人。这就是 Onely 运营招募作战台。',
     act: async (page) => {
       await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-      await page.waitForTimeout(1100);
-      await page.mouse.wheel(0, 600);
-      await page.waitForTimeout(1300);
-      await page.mouse.wheel(0, 800);
-      await page.waitForTimeout(1300);
-      await page.mouse.wheel(0, -2200);
+      await page.waitForTimeout(1200);
+      await page.mouse.wheel(0, 1400);
+      await page.waitForTimeout(1500);
+      await page.mouse.wheel(0, -1600);
       await page.waitForTimeout(900);
     },
   },
@@ -147,20 +162,17 @@ async function launch() {
 }
 
 async function main() {
-  // 0. 服务与干净状态
   await fetch(`${BASE}/api/seed`, { method: 'POST' });
   console.log('server ok, seed reset');
 
-  // 1. 配音先行（确定每节时长）
   const audio = [];
   for (const s of SECTIONS) {
     const file = tts(s.narration, `${RAW}/${s.id}.mp3`);
     const d = durOf(file);
     audio.push({ ...s, audioFile: file, dur: d });
-    console.log(`tts ${s.id}: ${d.toFixed(1)}s (${file})`);
+    console.log(`tts ${s.id}: ${d.toFixed(1)}s`);
   }
 
-  // 2. 分节录屏
   const browser = await launch();
   const ctx = await browser.newContext({
     viewport: { width: 1440, height: 900 },
@@ -183,7 +195,6 @@ async function main() {
   }
   await browser.close();
 
-  // 3. 逐节合成（视频轨重编码为 h264，音频 aac，取音频长度收尾）
   const segs = [];
   for (const r of recorded) {
     const seg = `${RAW}/${r.id}.mp4`;
@@ -196,13 +207,11 @@ async function main() {
     console.log('muxed', seg, durOf(seg).toFixed(1) + 's');
   }
 
-  // 4. 拼接成片（concat 列表内路径相对列表文件解析，必须写绝对路径）
   const list = `${RAW}/concat.txt`;
   writeFileSync(list, segs.map((f) => `file '${path.resolve(f).replace(/\\/g, '/')}'`).join('\n'));
   execFileSync('ffmpeg', ['-y', '-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', OUT], { stdio: 'pipe' });
   console.log('FINAL:', OUT, durOf(OUT).toFixed(1) + 's');
 
-  // 5. 恢复演示数据
   await fetch(`${BASE}/api/seed`, { method: 'POST' });
 }
 

@@ -1,92 +1,110 @@
-// 极简 CSV 解析：支持引号包裹字段、字段内逗号/换行、CRLF（Windows 导出常见）。
-// 只覆盖本项目的导入需求，不追求 RFC 全兼容。
+// CSV 解析 v2 —— 保留通用解析器，新增参照稿的表头别名映射与 rowToLead。
 
-export function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = '';
-  let inQuotes = false;
-  const src = text.replace(/^\uFEFF/, ''); // 去 BOM
+import { parseCsvTable, toBool, toInt } from './csv-base';
+import type { EnglishLevel, Lead } from './types';
+import { ALL_PLATFORMS, countryByAny, todayStr } from './types';
+import { grade } from './scoring';
 
-  for (let i = 0; i < src.length; i++) {
-    const ch = src[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (src[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        field += ch;
-      }
+export { parseCsv, parseCsvTable, toBool, toInt, toEnglishScore } from './csv-base';
+
+const ALIAS: Record<string, string[]> = {
+  name: ['name', 'full_name', '姓名'],
+  email: ['email', '邮箱'],
+  country: ['country', '国家'],
+  city: ['city', '城市'],
+  source: ['source', '来源'],
+  profile_url: ['profile_url', 'url', '链接'],
+  phone: ['phone', '电话'],
+  telegram: ['telegram'],
+  platforms: ['platforms', '平台'],
+  us_years: ['us_years', '经验'],
+  english: ['english', '英语'],
+  rating: ['rating', '评分'],
+  hours: ['hours', '小时'],
+  timezone_overlap: ['timezone_overlap', '时区'],
+  ai_tools: ['ai_tools', 'ai'],
+  skills: ['skills'],
+  role: ['role'],
+  notes: ['notes', '备注'],
+};
+
+export interface ParsedImport {
+  leads: Lead[];
+  invalid: number;
+  total: number;
+}
+
+let seqCounter = 0;
+export function nextId(prefix = 'L'): string {
+  seqCounter += 1;
+  return prefix + String(Date.now() % 100000) + String(seqCounter).padStart(3, '0');
+}
+
+export function parseImport(text: string, sources: string[], idGen: () => string): ParsedImport {
+  const { headers, rows } = parseCsvTable(text);
+  const hmap: Record<string, number> = {};
+  Object.keys(ALIAS).forEach((k) => {
+    ALIAS[k].forEach((a) => {
+      const i = headers.indexOf(a);
+      if (i >= 0 && hmap[k] === undefined) hmap[k] = i;
+    });
+  });
+  const rawRows = parseCsvTable(text).rows;
+  const leads: Lead[] = [];
+  let invalid = 0;
+  for (const r of rawRows) {
+    const g = (k: string) => (hmap[k] === undefined ? '' : String(r[headers[hmap[k]]] ?? '').trim());
+    const name = g('name');
+    const email = g('email');
+    if (!name && !email) {
+      invalid += 1;
       continue;
     }
-    if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === ',') {
-      row.push(field);
-      field = '';
-    } else if (ch === '\n') {
-      row.push(field);
-      field = '';
-      if (row.length > 1 || row[0] !== '') rows.push(row);
-      row = [];
-    } else if (ch === '\r') {
-      // 忽略，\n 统一处理
-    } else {
-      field += ch;
-    }
+    const c = countryByAny(g('country'));
+    const engRaw = g('english');
+    const english: EnglishLevel = (['native', 'fluent', 'conversational'] as EnglishLevel[]).includes(
+      engRaw as EnglishLevel
+    )
+      ? (engRaw as EnglishLevel)
+      : engRaw.indexOf('母') >= 0
+        ? 'native'
+        : 'fluent';
+    const lead: Lead = {
+      id: idGen(),
+      name: name || '(未命名)',
+      country: c.code,
+      city: g('city'),
+      source: sources.includes(g('source')) ? g('source') : g('source') || '手动导入',
+      profile_url: g('profile_url'),
+      email,
+      phone: g('phone'),
+      telegram: g('telegram'),
+      platforms: (g('platforms') || '')
+        .split(/[,，\/]/)
+        .map((s) => s.trim().toLowerCase())
+        .filter((s) => ALL_PLATFORMS.includes(s)),
+      us_years: toInt(g('us_years')),
+      english,
+      rating: toInt(g('rating')),
+      hours_per_week: toInt(g('hours')),
+      timezone_overlap: toInt(g('timezone_overlap')),
+      ai_tools: toBool(g('ai_tools')) ? 1 : 0,
+      skills: (g('skills') || '').split(/[,，]/).filter(Boolean),
+      role: g('role'),
+      client_type: '',
+      notes: g('notes'),
+      score: 0,
+      tier: 'C',
+      status: 'new',
+      messages: [],
+      activities: [{ t: todayStr(), text: '线索入库（导入）' }],
+      created_at: todayStr(),
+      last_contact_at: null,
+      next_followup_at: null,
+      dup_count: 0,
+    };
+    grade(lead);
+    leads.push(lead);
   }
-  // 收尾（无换行结尾的最后一行）
-  if (field !== '' || row.length > 0) {
-    row.push(field);
-    if (row.length > 1 || row[0] !== '') rows.push(row);
-  }
-  return rows;
-}
-
-export interface CsvTable {
-  headers: string[];
-  rows: Record<string, string>[];
-}
-
-/** 解析为对象数组；表头做 trim + 小写归一。空行跳过。 */
-export function parseCsvTable(text: string): CsvTable {
-  const raw = parseCsv(text);
-  if (raw.length === 0) return { headers: [], rows: [] };
-  const headers = raw[0].map((h) => h.trim().toLowerCase());
-  const rows: Record<string, string>[] = [];
-  for (const r of raw.slice(1)) {
-    const obj: Record<string, string> = {};
-    let hasValue = false;
-    headers.forEach((h, i) => {
-      const v = (r[i] ?? '').trim();
-      obj[h] = v;
-      if (v !== '') hasValue = true;
-    });
-    if (hasValue) rows.push(obj);
-  }
-  return { headers, rows };
-}
-
-/** 把任意输入归一成 boole：1/true/yes/y/√ → true */
-export function toBool(v: unknown): boolean {
-  if (typeof v === 'boolean') return v;
-  if (typeof v === 'number') return v !== 0;
-  if (typeof v === 'string') {
-    return ['1', 'true', 'yes', 'y', '√', '是'].includes(v.trim().toLowerCase());
-  }
-  return false;
-}
-
-export function toInt(v: unknown, fallback = 0): number {
-  const n = parseInt(String(v ?? '').trim(), 10);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-export function toEnglishScore(v: unknown): number {
-  const n = toInt(v, 0);
-  return Math.max(0, Math.min(25, n));
+  return { leads, invalid, total: rawRows.length };
 }

@@ -1,45 +1,67 @@
-// GET /api/leads?status=&channel=&tier=&q=&sort=
+// GET /api/leads?country=&source=&tier=&status=&q= ；POST /api/leads 新建线索
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '../../../lib/db';
-import type { LeadRow } from '../../../lib/types';
+import { allLeads, insertLead, regrade, addActivity, nextLeadIds } from '../../../lib/store';
+import type { Lead } from '../../../lib/types';
+import { todayStr } from '../../../lib/types';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  const db = getDb();
   const sp = req.nextUrl.searchParams;
-  const where: string[] = [];
-  const args: (string | number)[] = [];
-
-  const status = sp.get('status');
-  if (status) {
-    where.push('status = ?');
-    args.push(status);
-  }
-  const channel = sp.get('channel');
-  if (channel) {
-    where.push('channel = ?');
-    args.push(channel);
-  }
+  let leads = allLeads(getDb());
+  const country = sp.get('country');
+  const source = sp.get('source');
   const tier = sp.get('tier');
-  if (tier) {
-    where.push('tier = ?');
-    args.push(tier);
-  }
-  const q = sp.get('q');
-  if (q) {
-    where.push('(first_name LIKE ? OR last_name LIKE ? OR email LIKE ? OR handle LIKE ?)');
-    const like = `%${q}%`;
-    args.push(like, like, like, like);
-  }
+  const status = sp.get('status');
+  const q = (sp.get('q') ?? '').toLowerCase();
+  if (country) leads = leads.filter((l) => l.country === country);
+  if (source) leads = leads.filter((l) => l.source === source);
+  if (tier) leads = leads.filter((l) => l.tier === tier);
+  if (status) leads = leads.filter((l) => l.status === status);
+  if (q)
+    leads = leads.filter((l) =>
+      (l.name + l.city + l.notes + l.role + l.email).toLowerCase().indexOf(q) >= 0
+    );
+  return NextResponse.json({ leads, count: leads.length });
+}
 
-  const sortMap: Record<string, string> = {
-    score: 'score DESC',
-    created: 'created_at DESC',
-    followup: 'next_followup_at ASC',
+export async function POST() {
+  const db = getDb();
+  const [id] = nextLeadIds(db, 1);
+  const lead: Lead = {
+    id,
+    name: '新线索 ' + id.slice(1),
+    country: 'PH',
+    city: '',
+    source: '手动导入',
+    profile_url: '',
+    email: '',
+    phone: '',
+    telegram: '',
+    platforms: [],
+    us_years: 0,
+    english: 'conversational',
+    rating: 0,
+    hours_per_week: 0,
+    timezone_overlap: 0,
+    ai_tools: 0,
+    skills: [],
+    role: '',
+    client_type: '',
+    notes: '',
+    score: 0,
+    tier: 'C',
+    status: 'new',
+    messages: [],
+    activities: [],
+    created_at: todayStr(),
+    last_contact_at: null,
+    next_followup_at: null,
+    dup_count: 0,
   };
-  const sort = sortMap[sp.get('sort') ?? 'score'] ?? 'score DESC';
-  const sql = `SELECT * FROM leads${where.length ? ' WHERE ' + where.join(' AND ') : ''} ORDER BY ${sort}`;
-  const rows = db.prepare(sql).all(...args) as unknown as LeadRow[];
-  return NextResponse.json({ leads: rows, count: rows.length });
+  regrade(lead);
+  addActivity(lead, '手动新建线索');
+  insertLead(db, lead);
+  return NextResponse.json({ lead });
 }

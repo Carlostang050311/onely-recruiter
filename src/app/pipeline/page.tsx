@@ -1,31 +1,25 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { STATUS_FLOW, STATUS_LABELS, channelLabel } from '../../lib/types';
-import type { LeadRow, Status } from '../../lib/types';
+import type { Lead, Status } from '../../lib/types';
+import { STAGE_KEYS, STATUSES, countryByCode, daysBetween, fmtDate, todayStr, PLATFORM_LABEL } from '../../lib/types';
+import Drawer from '../../components/Drawer';
 import Toast from '../../components/Toast';
 import { Skeleton } from '../../components/motion';
 
-function dueInfo(lead: LeadRow, now: number): { cls: string; text: string } | null {
-  if (!lead.next_followup_at) return null;
-  const t = new Date(lead.next_followup_at).getTime();
-  if (t <= now) return { cls: 'due', text: '逾期待跟进' };
-  if (t - now < 6 * 3600_000) return { cls: 'soon', text: '今日跟进' };
-  return null;
-}
-
 export default function PipelinePage() {
-  const [leads, setLeads] = useState<LeadRow[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [drawerId, setDrawerId] = useState<string | null>(null);
   const [toast, setToast] = useState('');
-  const now = Date.now();
+  const today = todayStr();
 
   const load = useCallback(() => {
     setLoading(true);
-    fetch('/api/leads?sort=followup')
+    fetch('/api/leads')
       .then((r) => r.json())
       .then((d) => {
-        setLeads(d.leads as LeadRow[]);
+        setLeads(d.leads as Lead[]);
         setLoading(false);
       });
   }, []);
@@ -33,93 +27,187 @@ export default function PipelinePage() {
     load();
   }, [load]);
 
-  async function move(lead: LeadRow, status: Status) {
-    await fetch(`/api/leads/${lead.id}`, {
-      method: 'PATCH',
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(''), 2200);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  async function move(id: string, dir: 1 | -1) {
+    await fetch(`/api/leads/${id}/stage`, {
+      method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ dir }),
     });
-    setToast(`${lead.first_name} → ${STATUS_LABELS[status]}`);
-    setTimeout(() => setToast(''), 1800);
     load();
   }
 
+  async function dropTo(id: string, status: Status) {
+    await fetch(`/api/leads/${id}/stage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    load();
+  }
+
+  async function completeFollowup(l: Lead) {
+    const seq = Math.min(l.messages.length, 2);
+    const channel = l.messages.length ? l.messages[l.messages.length - 1].channel : 'email';
+    await fetch(`/api/leads/${l.id}/message`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ channel, seq }),
+    });
+    load();
+    setToast('已记录跟进：' + l.name);
+  }
+
+  const reminders = leads.filter(
+    (l) => l.next_followup_at && l.next_followup_at <= today && ['contacted', 'replied', 'qualified'].includes(l.status)
+  );
+  const drawerLead = leads.find((l) => l.id === drawerId) ?? null;
+
   return (
     <>
-      <div className="page-head">
-        <h2>跟进看板</h2>
-        <p>按状态分列；逾期跟进卡片会标红。人工只做两个动作：推进状态、处理逾期</p>
-      </div>
-
-      <div className="kanban">
-        {STATUS_FLOW.map((s, ci) => {
-          const col = leads.filter((l) => l.status === s);
+      <h3 className="mt8" style={{ marginBottom: 10, fontSize: 14.5 }}>
+        待跟进提醒 <span className="small muted">（逾期 / 今日到期）</span>
+      </h3>
+      <div className="reminders">
+        {reminders.length === 0 && <div className="small muted">暂无到期提醒，节奏健康。</div>}
+        {reminders.slice(0, 12).map((l) => {
+          const overdue = (l.next_followup_at ?? '') < today;
           return (
-            <motion.div layout className="kcol" key={s}>
-              <div className="kcol-head">
-                <span>{STATUS_LABELS[s]}</span>
-                <span className="count">{col.length}</span>
+            <motion.div
+              key={l.id}
+              className={`rem-item${overdue ? ' overdue' : ''}`}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22 }}
+              style={{ cursor: 'pointer' }}
+              onClick={() => setDrawerId(l.id)}
+            >
+              <span className={`tier-badge tier-${l.tier}`}>{l.tier}</span>
+              <div>
+                <div className="rname">{l.name}</div>
+                <div className="rmeta">
+                  {overdue ? `逾期 ${Math.abs(daysBetween(l.next_followup_at!, today))} 天` : '今日到期'} ·{' '}
+                  {STATUSES.find((s) => s.key === l.status)?.label}
+                </div>
               </div>
-              {loading && leads.length === 0
-                ? [...Array(3)].map((_, i) => <Skeleton key={i} h={92} style={{ marginBottom: 8 }} />)
-                : col.map((l, i) => {
-                    const due = dueInfo(l, now);
-                    const idx = STATUS_FLOW.indexOf(s);
-                    const prev = idx > 0 ? STATUS_FLOW[idx - 1] : null;
-                    const next = idx < STATUS_FLOW.length - 1 ? STATUS_FLOW[idx + 1] : null;
-                    return (
-                      <motion.div
-                        layout
-                        layoutId={`lead-${l.id}`}
-                        className="kcard"
-                        key={l.id}
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{
-                          layout: { type: 'spring', stiffness: 420, damping: 34 },
-                          opacity: { duration: 0.22, delay: ci * 0.04 + i * 0.03 },
-                          y: { duration: 0.22, delay: ci * 0.04 + i * 0.03 },
-                        }}
-                        style={due?.cls === 'due' ? { borderColor: 'rgba(255,107,107,0.5)' } : undefined}
-                      >
-                        <div className="name">
-                          <span>{l.first_name} {l.last_name}</span>
-                          <span className={`chip tier-${l.tier ?? 'C'}`}>{l.tier}</span>
-                        </div>
-                        <div className="meta">
-                          {channelLabel(l.channel)} · {l.score ?? '—'} 分 · {l.location}
-                        </div>
-                        {due && (
-                          <div style={{ marginTop: 6 }}>
-                            <motion.span
-                              className={`chip ${due.cls}`}
-                              initial={{ scale: 1 }}
-                              animate={{ scale: [1, 1.15, 1, 1.1, 1] }}
-                              transition={{ duration: 0.6, times: [0, 0.3, 0.55, 0.8, 1], delay: 0.4 }}
-                            >
-                              {due.text}
-                            </motion.span>
-                          </div>
-                        )}
-                        <div className="acts">
-                          {prev && s !== 'new' && (
-                            <button className="btn sm ghost" onClick={() => move(l, prev)}>←</button>
-                          )}
-                          {next && (
-                            <button className="btn sm" onClick={() => move(l, next)}>→ {STATUS_LABELS[next]}</button>
-                          )}
-                          {s !== 'onboarded' && (
-                            <button className="btn sm danger-ghost" onClick={() => move(l, 'rejected')}>✕</button>
-                          )}
-                        </div>
-                      </motion.div>
-                    );
-                  })}
+              <button
+                className="btn btn-sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  completeFollowup(l);
+                }}
+              >
+                完成跟进
+              </button>
             </motion.div>
           );
         })}
       </div>
 
+      <div className="kanban">
+        {STAGE_KEYS.map((k) => {
+          const st = STATUSES.find((s) => s.key === k)!;
+          const list = leads.filter((l) => l.status === k);
+          return (
+            <div
+              className="kcol"
+              key={k}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const id = e.dataTransfer.getData('text/plain');
+                if (id) dropTo(id, k);
+              }}
+            >
+              <div className="kcol-head">
+                <span className="dot" style={{ background: st.color }} />
+                {st.label}
+                <span className="cnt">{list.length}</span>
+              </div>
+              {loading && leads.length === 0
+                ? [...Array(3)].map((_, i) => <Skeleton key={i} h={84} style={{ marginBottom: 9 }} />)
+                : list.map((l) => (
+                    <motion.div
+                      layout
+                      layoutId={`lead-${l.id}`}
+                      className="kcard"
+                      key={l.id}
+                      draggable
+                      onDragStart={(e) => (e as unknown as React.DragEvent).dataTransfer?.setData('text/plain', l.id)}
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).tagName === 'BUTTON') return;
+                        setDrawerId(l.id);
+                      }}
+                      transition={{ layout: { type: 'spring', stiffness: 420, damping: 34 } }}
+                    >
+                      <div className="kn">
+                        <span className={`tier-badge tier-${l.tier}`} style={{ width: 19, height: 19, fontSize: 10.5 }}>
+                          {l.tier}
+                        </span>
+                        {l.name}
+                      </div>
+                      <div className="km">
+                        <span>{countryByCode(l.country).flag}</span>
+                        <span>{l.platforms[0] ? PLATFORM_LABEL[l.platforms[0]] : ''}</span>
+                        {l.next_followup_at && <span style={{ color: 'var(--gold)' }}>跟进 {fmtDate(l.next_followup_at)}</span>}
+                      </div>
+                      <div className="kacts">
+                        <button
+                          onClick={() => move(l.id, -1)}
+                          disabled={k === 'new'}
+                          style={k === 'new' ? { opacity: 0.35 } : undefined}
+                        >
+                          ←
+                        </button>
+                        <button onClick={() => move(l.id, 1)} disabled={k === 'onboarded'} style={k === 'onboarded' ? { opacity: 0.35 } : undefined}>
+                          推进 →
+                        </button>
+                      </div>
+                    </motion.div>
+                  ))}
+            </div>
+          );
+        })}
+        {/* 流失列：参照稿看板为五阶段 + 流失收纳，保留第六列展示 lost */}
+        <div
+          className="kcol"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const id = e.dataTransfer.getData('text/plain');
+            if (id) dropTo(id, 'lost');
+          }}
+        >
+          <div className="kcol-head">
+            <span className="dot" style={{ background: '#87726c' }} />
+            流失
+            <span className="cnt">{leads.filter((l) => l.status === 'lost').length}</span>
+          </div>
+          {leads
+            .filter((l) => l.status === 'lost')
+            .map((l) => (
+              <motion.div layout layoutId={`lead-${l.id}`} className="kcard" key={l.id} onClick={() => setDrawerId(l.id)}>
+                <div className="kn">
+                  <span className={`tier-badge tier-${l.tier}`} style={{ width: 19, height: 19, fontSize: 10.5 }}>
+                    {l.tier}
+                  </span>
+                  {l.name}
+                </div>
+                <div className="km">
+                  <span>{countryByCode(l.country).flag}</span>
+                  <span>{l.source}</span>
+                </div>
+              </motion.div>
+            ))}
+        </div>
+      </div>
+
+      <Drawer lead={drawerLead} onClose={() => setDrawerId(null)} onChanged={load} />
       <Toast msg={toast} />
     </>
   );

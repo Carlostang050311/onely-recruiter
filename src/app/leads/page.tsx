@@ -1,37 +1,40 @@
 'use client';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
-import { CHANNELS, STATUS_FLOW, STATUS_LABELS, channelLabel } from '../../lib/types';
-import type { LeadRow, Status } from '../../lib/types';
-import { scoreLead, safeParsePlatforms } from '../../lib/scoring';
-import type { DedupReportItem } from '../../lib/dedup';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import type { Lead } from '../../lib/types';
+import { COUNTRIES, SOURCES, STATUSES, countryByCode, fmtDate, todayStr } from '../../lib/types';
+import Drawer from '../../components/Drawer';
 import Toast from '../../components/Toast';
+import { Icon } from '../../components/Icons';
 import { Skeleton } from '../../components/motion';
 
-interface ImportReport {
-  totalRows: number;
-  parsedRows: number;
-  inserted: number;
-  duplicates: DedupReportItem[];
-  insertedLeads: { id: number; name: string; score: number | null; tier: string | null }[];
-}
-
-function nextStatus(s: Status): Status | null {
-  const i = STATUS_FLOW.indexOf(s);
-  return i >= 0 && i < STATUS_FLOW.length - 1 ? STATUS_FLOW[i + 1] : null;
+interface Report {
+  total: number;
+  nw: number;
+  merged: number;
+  invalid: number;
 }
 
 export default function LeadsPage() {
-  const [leads, setLeads] = useState<LeadRow[]>([]);
-  const [filters, setFilters] = useState({ status: '', channel: '', tier: '', q: '', sort: 'score' });
-  const [report, setReport] = useState<ImportReport | null>(null);
-  const [paste, setPaste] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [expanded, setExpanded] = useState<number | null>(null);
-  const [toast, setToast] = useState('');
-  const [lastInserted, setLastInserted] = useState<number[]>([]);
+  return (
+    <Suspense fallback={null}>
+      <LeadsInner />
+    </Suspense>
+  );
+}
+
+function LeadsInner() {
+  const params = useSearchParams();
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [filters, setFilters] = useState({ q: '', country: '', source: '', tier: '', status: '' });
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [drawerId, setDrawerId] = useState<string | null>(null);
+  const [drawerTab, setDrawerTab] = useState<'score' | 'msg' | 'log' | 'edit'>('score');
+  const [importOpen, setImportOpen] = useState(false);
+  const [paste, setPaste] = useState('');
+  const [report, setReport] = useState<Report | null>(null);
+  const [toast, setToast] = useState('');
 
   const load = useCallback(() => {
     const sp = new URLSearchParams();
@@ -40,7 +43,7 @@ export default function LeadsPage() {
     fetch(`/api/leads?${sp}`)
       .then((r) => r.json())
       .then((d) => {
-        setLeads(d.leads as LeadRow[]);
+        setLeads(d.leads as Lead[]);
         setLoading(false);
       });
   }, [filters]);
@@ -49,320 +52,301 @@ export default function LeadsPage() {
     load();
   }, [load]);
 
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(''), 2200);
-  };
-
-  async function doImport(csv: string, filename: string) {
-    setBusy(true);
-    try {
-      const res = await fetch('/api/leads/import', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ csv, filename }),
-      });
-      const data = (await res.json()) as ImportReport;
-      setReport(data);
-      setLastInserted(data.insertedLeads.map((l) => l.id));
-      load();
-      showToast(`导入完成：新增 ${data.inserted} 条，重复 ${data.duplicates.length} 条`);
-    } finally {
-      setBusy(false);
+  useEffect(() => {
+    const open = params.get('open');
+    const tab = params.get('tab');
+    if (open) {
+      setDrawerId(open);
+      setDrawerTab(tab === 'edit' ? 'edit' : 'score');
     }
-  }
+  }, [params]);
 
-  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    await doImport(await f.text(), f.name);
-    e.target.value = '';
-  }
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(''), 2400);
+    return () => clearTimeout(t);
+  }, [toast]);
 
-  async function move(lead: LeadRow, status: Status) {
-    await fetch(`/api/leads/${lead.id}`, {
-      method: 'PATCH',
+  const drawerLead = leads.find((l) => l.id === drawerId) ?? null;
+
+  async function runImport() {
+    const res = await fetch('/api/leads/import', {
+      method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ csv: paste, filename: 'paste.csv' }),
     });
+    const r = (await res.json()) as Report;
+    setImportOpen(false);
+    setPaste('');
+    if (!r.total && !r.invalid) {
+      setToast('未识别到有效行，请检查表头');
+      return;
+    }
+    setReport(r);
     load();
+  }
+
+  async function bulk(action: 'grade' | 'msg') {
+    const ids = selected.size ? [...selected] : leads.map((l) => l.id);
+    const res = await fetch('/api/leads/bulk', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ids, action }),
+    });
+    const d = (await res.json()) as { n: number };
+    load();
+    setToast(action === 'grade' ? `已对 ${d.n} 条线索重新分级` : `已为 ${d.n} 条新线索生成首触文案（未发送）`);
+  }
+
+  function exportCsv() {
+    const ids = selected.size ? `?ids=${[...selected].join(',')}` : '';
+    window.location.href = `/api/leads/export${ids}`;
+    setToast(`已导出 ${selected.size || leads.length} 条线索`);
+  }
+
+  function toggle(id: string, checked: boolean) {
+    const next = new Set(selected);
+    if (checked) next.add(id);
+    else next.delete(id);
+    setSelected(next);
   }
 
   return (
     <>
-      <div className="page-head">
-        <h2>线索与导入</h2>
-        <p>CSV 导入自动去重（邮箱 / 社媒号 / 姓名+地区 三级匹配），入库即评分分级</p>
+      <div className="hint-banner">
+        <Icon name="info" />
+        支持 CSV 文件 / 粘贴导入；系统按邮箱、主页链接、电话自动归一化去重，并按评分模型批量分级。可点击任意行查看评分明细、生成专属触达文案。
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <h3>导入线索</h3>
-        <div className="row" style={{ marginBottom: 10 }}>
-          <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={onFile} style={{ display: 'none' }} />
-          <button className="btn primary" onClick={() => fileRef.current?.click()} disabled={busy}>
-            {busy ? '导入中…' : '选择 CSV 文件'}
-          </button>
-          <a className="btn ghost" href="/sample-leads.csv" download>
-            下载示例 CSV
-          </a>
-          <button
-            className="btn ghost"
-            onClick={async () => {
-              await fetch('/api/seed', { method: 'POST' });
-              setReport(null);
-              load();
-              showToast('演示数据已重置');
-            }}
-          >
-            重置演示数据
-          </button>
-        </div>
-        <label className="field">
-          或直接粘贴 CSV 内容
-          <textarea
-            value={paste}
-            onChange={(e) => setPaste(e.target.value)}
-            placeholder={'first_name,last_name,email,handle,location,channel,platforms,...\nKyla,Santos,kyla@gmail.com,@kyla,Quezon City\\, PH,telegram_community,instagram;tiktok,...'}
-          />
-        </label>
-        <div className="row" style={{ marginTop: 10 }}>
-          <button className="btn" disabled={!paste.trim() || busy} onClick={() => doImport(paste, 'paste.csv')}>
-            导入粘贴内容
-          </button>
-          {paste.trim() && (
-            <button className="btn ghost sm" onClick={() => setPaste('')}>
-              清空
-            </button>
-          )}
-        </div>
+      <div className="toolbar">
+        <input
+          className="field search"
+          placeholder="搜索姓名 / 城市 / 简介…"
+          value={filters.q}
+          onChange={(e) => setFilters({ ...filters, q: e.target.value })}
+        />
+        <select className="field" value={filters.country} onChange={(e) => setFilters({ ...filters, country: e.target.value })}>
+          <option value="">全部地区</option>
+          {COUNTRIES.map((c) => (
+            <option key={c.code} value={c.code}>{c.flag} {c.name}</option>
+          ))}
+        </select>
+        <select className="field" value={filters.source} onChange={(e) => setFilters({ ...filters, source: e.target.value })}>
+          <option value="">全部来源</option>
+          {SOURCES.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        <select className="field" value={filters.tier} onChange={(e) => setFilters({ ...filters, tier: e.target.value })}>
+          <option value="">全部分级</option>
+          <option>S</option>
+          <option>A</option>
+          <option>B</option>
+          <option>C</option>
+        </select>
+        <select className="field" value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
+          <option value="">全部状态</option>
+          {STATUSES.map((s) => (
+            <option key={s.key} value={s.key}>{s.label}</option>
+          ))}
+        </select>
+        <div style={{ flex: 1 }} />
+        <button className="btn btn-sm" onClick={() => setImportOpen(true)}>
+          <Icon name="import" />
+          导入线索
+        </button>
+        <button className="btn btn-sm" onClick={() => bulk('grade')}>
+          <Icon name="grade" />
+          批量分级
+        </button>
+        <button className="btn btn-sm" onClick={() => bulk('msg')}>
+          <Icon name="outreach" />
+          批量文案
+        </button>
+        <button className="btn btn-sm" onClick={exportCsv}>
+          <Icon name="export" />
+          导出 CSV
+        </button>
+      </div>
 
-        {report && (
-          <motion.div
-            className="report"
-            initial={{ opacity: 0, scale: 0.97, y: -6 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-          >
-            <div className="nums">
-              <div>
-                <b>{report.totalRows}</b>
-                <span>文件总行数</span>
-              </div>
-              <div>
-                <b style={{ color: 'var(--ok)' }}>{report.inserted}</b>
-                <span>新增入库</span>
-              </div>
-              <div>
-                <b style={{ color: 'var(--warn)' }}>{report.duplicates.length}</b>
-                <span>重复拦截</span>
-              </div>
-            </div>
-            {report.duplicates.length > 0 && (
-              <table style={{ marginBottom: 10 }}>
-                <thead>
-                  <tr>
-                    <th>文件行</th>
-                    <th>姓名</th>
-                    <th>命中规则</th>
-                    <th>匹配值</th>
-                    <th>撞车对象</th>
+      <div className="table-wrap">
+        <table>
+          <colgroup>
+            <col style={{ width: 36 }} />
+            <col style={{ width: 150 }} />
+            <col style={{ width: 120 }} />
+            <col style={{ width: 135 }} />
+            <col style={{ width: 150 }} />
+            <col style={{ width: 90 }} />
+            <col style={{ width: 64 }} />
+            <col style={{ width: 118 }} />
+            <col style={{ width: 104 }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th />
+              <th>姓名</th>
+              <th>地区</th>
+              <th>来源</th>
+              <th>擅长平台</th>
+              <th>美国经验</th>
+              <th>分级</th>
+              <th>状态</th>
+              <th>下次跟进</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && leads.length === 0
+              ? [...Array(10)].map((_, i) => (
+                  <tr key={i}>
+                    <td colSpan={9}>
+                      <Skeleton h={26} />
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {report.duplicates.map((d, i) => (
-                    <motion.tr
-                      key={i}
-                      animate={{ x: [0, -6, 6, -4, 4, 0] }}
-                      transition={{ duration: 0.45, delay: 0.35 + i * 0.1 }}
-                    >
-                      <td>{d.row}</td>
-                      <td>{d.name}</td>
+                ))
+              : leads.map((l) => {
+                  const c = countryByCode(l.country);
+                  const st = STATUSES.find((s) => s.key === l.status)!;
+                  const due = l.next_followup_at && l.next_followup_at <= todayStr();
+                  return (
+                    <tr key={l.id} className={selected.has(l.id) ? 'selected' : undefined}>
                       <td>
-                        {d.matchedKey === 'email' ? '邮箱一致' : d.matchedKey === 'handle' ? '社媒号一致' : '姓名+地区一致'}
+                        <input
+                          type="checkbox"
+                          className="checkbox"
+                          checked={selected.has(l.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => toggle(l.id, e.target.checked)}
+                        />
                       </td>
-                      <td className="sub">{d.matchedValue}</td>
-                      <td className="sub">{d.against.startsWith('db:') ? `库内 #${d.against.slice(3)}` : `文件第 ${d.against.slice(5)} 行`}</td>
-                    </motion.tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            {report.insertedLeads.length > 0 && (
-              <div className="small muted">
-                新增并自动评分：
-                {report.insertedLeads.map((l) => (
-                  <span key={l.id} className="chip" style={{ marginLeft: 6 }}>
-                    {l.name} <b style={{ marginLeft: 4 }}>{l.score}</b>
-                    <span className={`chip tier-${l.tier}`} style={{ marginLeft: 4 }}>{l.tier}</span>
-                  </span>
-                ))}
-              </div>
-            )}
-          </motion.div>
-        )}
-      </div>
-
-      <div className="card">
-        <div className="row" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
-          <h3 style={{ margin: 0 }}>线索列表（{leads.length}）</h3>
-          <div className="row">
-            <input
-              placeholder="搜索姓名 / 邮箱 / 社媒号"
-              value={filters.q}
-              onChange={(e) => setFilters({ ...filters, q: e.target.value })}
-              style={{ width: 190 }}
-            />
-            <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
-              <option value="">全部状态</option>
-              {(Object.keys(STATUS_LABELS) as Status[]).map((s) => (
-                <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-              ))}
-            </select>
-            <select value={filters.channel} onChange={(e) => setFilters({ ...filters, channel: e.target.value })}>
-              <option value="">全部渠道</option>
-              {CHANNELS.map((c) => (
-                <option key={c.key} value={c.key}>{c.label}</option>
-              ))}
-            </select>
-            <select value={filters.tier} onChange={(e) => setFilters({ ...filters, tier: e.target.value })}>
-              <option value="">全部级别</option>
-              <option value="A">A 级</option>
-              <option value="B">B 级</option>
-              <option value="C">C 级</option>
-            </select>
-            <select value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value })}>
-              <option value="score">按评分</option>
-              <option value="created">按导入时间</option>
-              <option value="followup">按跟进时间</option>
-            </select>
-            <a className="btn ghost sm" href="/api/leads/export">导出 CSV</a>
-          </div>
-        </div>
-
-        {loading && leads.length === 0 ? (
-          <div style={{ padding: '6px 2px' }}>
-            {[...Array(8)].map((_, i) => (
-              <Skeleton key={i} h={44} style={{ marginBottom: 8 }} />
-            ))}
-          </div>
-        ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>姓名</th>
-                <th>地区</th>
-                <th>渠道</th>
-                <th>平台</th>
-                <th>周时长 / 美区班次</th>
-                <th>评分</th>
-                <th>状态</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {leads.map((l) => {
-                const ns = nextStatus(l.status);
-                const open = expanded === l.id;
-                return (
-                  <>
-                    <tr
-                      key={l.id}
-                      className={lastInserted.includes(l.id) ? 'flash-new' : undefined}
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => setExpanded(open ? null : l.id)}
-                    >
-                      <td>
-                        <b>{l.first_name} {l.last_name}</b>
-                        {lastInserted.includes(l.id) && (
-                          <motion.span
-                            className="chip tier-A"
-                            style={{ marginLeft: 6 }}
-                            initial={{ scale: 0.6, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            transition={{ type: 'spring', stiffness: 500, damping: 24, delay: 0.2 }}
-                          >
-                            新
-                          </motion.span>
-                        )}
-                        <div className="sub">{l.handle || l.email}</div>
+                      <td onClick={() => setDrawerId(l.id)}>
+                        <b>{l.name}</b>
+                        <div className="cell-sub">{c.flag} {l.city}</div>
                       </td>
-                      <td>{l.location}</td>
-                      <td>{channelLabel(l.channel)}</td>
-                      <td className="sub">{safeParsePlatforms(l.platforms).join(' · ') || '—'}</td>
-                      <td>
-                        {l.hours_per_week}h/周{l.us_shift ? ' · ✓美区班次' : ''}
+                      <td onClick={() => setDrawerId(l.id)}>{c.name}</td>
+                      <td onClick={() => setDrawerId(l.id)}>
+                        {l.source}
+                        {l.dup_count > 0 && <span className="tag-mini">合{l.dup_count}</span>}
                       </td>
-                      <td>
-                        <b>{l.score ?? '—'}</b>{' '}
-                        <span className={`chip tier-${l.tier ?? 'C'}`}>{l.tier ?? '—'}</span>
+                      <td onClick={() => setDrawerId(l.id)}>
+                        {l.platforms.slice(0, 3).map((p) => p).join(' / ') || '—'}
+                        {l.platforms.length > 3 ? ' …' : ''}
                       </td>
-                      <td>
-                        <motion.span
-                          key={l.status}
-                          className={`chip status s-${l.status}`}
-                          initial={{ scale: 0.85, opacity: 0.4 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          transition={{ duration: 0.18, ease: 'easeOut' }}
-                        >
-                          {STATUS_LABELS[l.status]}
-                        </motion.span>
+                      <td className="num" onClick={() => setDrawerId(l.id)}>
+                        {l.us_years ? l.us_years + ' 年' : <span className="muted">—</span>}
                       </td>
-                      <td onClick={(e) => e.stopPropagation()}>
-                        <div className="row" style={{ gap: 6 }}>
-                          {ns && (
-                            <button className="btn sm" onClick={() => move(l, ns)}>→ {STATUS_LABELS[ns]}</button>
-                          )}
-                          {l.status !== 'rejected' && l.status !== 'onboarded' && (
-                            <button className="btn sm danger-ghost" onClick={() => move(l, 'rejected')}>✕</button>
-                          )}
-                        </div>
+                      <td onClick={() => setDrawerId(l.id)}>
+                        <span className={`tier-badge tier-${l.tier}`}>{l.tier}</span>
+                      </td>
+                      <td onClick={() => setDrawerId(l.id)}>
+                        <span className={`pill st-${l.status}`}>
+                          <span className="dot" style={{ background: st.color }} />
+                          {st.label}
+                        </span>
+                      </td>
+                      <td className={'small ' + (due ? 'tbd' : 'muted')} onClick={() => setDrawerId(l.id)}>
+                        {l.next_followup_at ? fmtDate(l.next_followup_at) : '—'}
                       </td>
                     </tr>
-                    {open && (
-                      <tr key={`${l.id}-detail`}>
-                        <td colSpan={8} style={{ background: 'var(--panel-2)' }}>
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            transition={{ type: 'spring', stiffness: 400, damping: 34 }}
-                            style={{ overflow: 'hidden' }}
-                          >
-                            <div className="small" style={{ padding: '4px 2px' }}>
-                              <b>评分明细：</b>
-                              {scoreLead(l).reasons.map((r, ri) => (
-                                <motion.span
-                                  key={ri}
-                                  style={{ display: 'inline-block', marginRight: 4 }}
-                                  initial={{ opacity: 0, x: -4 }}
-                                  animate={{ opacity: 1, x: 0 }}
-                                  transition={{ duration: 0.2, delay: 0.08 + ri * 0.05, ease: 'easeOut' }}
-                                >
-                                  {r}；
-                                </motion.span>
-                              ))}
-                              <br />
-                              <b className="muted">档案：</b>
-                              <span className="muted">
-                                {l.email || '无邮箱'} · 英文样题 {l.english_sample}/25 ·{' '}
-                                {l.us_clients_exp ? '有美区/欧区客户经验' : '无美区客户经验'} ·{' '}
-                                {l.chat_exp ? '有粉丝聊天经验' : '无聊天经验'} · {l.crm_exp ? '用过 CRM' : '未用过 CRM'} ·{' '}
-                                领域 {l.niche || '—'} · 导入 {new Date(l.created_at).toLocaleString('zh-CN')}
-                              </span>
-                            </div>
-                          </motion.div>
-                        </td>
-                      </tr>
-                    )}
-                  </>
-                );
-              })}
-            </tbody>
-          </table>
+                  );
+                })}
+          </tbody>
+        </table>
+        <div className="table-foot">
+          <span>{leads.length} 条（筛选后）</span>
+          <span className="small muted">已选 {selected.size} 条 · 点击行查看详情</span>
         </div>
-        )}
       </div>
 
+      {/* 导入模态 */}
+      <div className={`overlay${importOpen ? ' show' : ''}`} onClick={() => setImportOpen(false)} />
+      <div className={`modal${importOpen ? ' show' : ''}`}>
+        <div className="modal-head">
+          <h3>导入线索</h3>
+          <button className="icon-close" style={{ position: 'static', marginLeft: 'auto' }} onClick={() => setImportOpen(false)}>
+            <Icon name="close" size={17} />
+          </button>
+        </div>
+        <div className="modal-body">
+          <div className="toolbar" style={{ marginBottom: 10 }}>
+            <button
+              className="btn btn-sm"
+              onClick={async () => {
+                const t = await (await fetch('/sample-leads.csv')).text();
+                setPaste(t);
+              }}
+            >
+              载入演示 CSV（含重复数据）
+            </button>
+            <label className="btn btn-sm" htmlFor="csvFile">选择 CSV 文件</label>
+            <input
+              type="file"
+              id="csvFile"
+              accept=".csv,text/csv"
+              style={{ display: 'none' }}
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (f) setPaste(await f.text());
+                e.target.value = '';
+              }}
+            />
+            <a className="btn btn-sm" href="/lead-template.csv" download>
+              <Icon name="export" />
+              下载模板
+            </a>
+          </div>
+          <label className="flab">或直接粘贴 CSV（首行表头）</label>
+          <textarea
+            className="field"
+            rows={10}
+            style={{ width: '100%', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 12 }}
+            placeholder="name,email,country,source,profile_url,platforms,us_years,english,rating,hours,timezone_overlap,ai_tools,notes"
+            value={paste}
+            onChange={(e) => setPaste(e.target.value)}
+          />
+          <div className="small muted mt8">
+            去重键：email（忽略大小写）、profile_url（归一化域名/尾斜杠）、phone（仅留数字）。重复记录将合并并保留最早一条。
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button className="btn" onClick={() => setImportOpen(false)}>取消</button>
+          <button className="btn btn-primary" onClick={runImport} disabled={!paste.trim()}>导入并去重分级</button>
+        </div>
+      </div>
+
+      {/* 导入报告模态 */}
+      <div className={`overlay${report ? ' show' : ''}`} onClick={() => setReport(null)} />
+      <div className={`modal${report ? ' show' : ''}`} style={{ width: 520 }}>
+        <div className="modal-head">
+          <h3>导入完成</h3>
+        </div>
+        <div className="modal-body">
+          {report && (
+            <table style={{ width: '100%', fontSize: 13.5, borderCollapse: 'collapse' }}>
+              <tbody>
+                <tr><td className="muted" style={{ padding: '7px 0' }}>读取数据行</td><td className="num" style={{ textAlign: 'right' }}>{report.total}</td></tr>
+                <tr><td className="muted" style={{ padding: '7px 0' }}>新增入库</td><td className="num yes" style={{ textAlign: 'right' }}>{report.nw}</td></tr>
+                <tr><td className="muted" style={{ padding: '7px 0' }}>重复合并</td><td className="num tbd" style={{ textAlign: 'right' }}>{report.merged}</td></tr>
+                <tr><td className="muted" style={{ padding: '7px 0' }}>无效行</td><td className="num no" style={{ textAlign: 'right' }}>{report.invalid}</td></tr>
+              </tbody>
+            </table>
+          )}
+          <div className="small muted mt16">重复记录已合并到最早条目，来源与备注已拼接，可在线索表查看「合 N」标记。</div>
+        </div>
+        <div className="modal-foot">
+          <button className="btn btn-primary" onClick={() => setReport(null)}>知道了</button>
+        </div>
+      </div>
+
+      <Drawer
+        lead={drawerLead}
+        initialTab={drawerTab}
+        onClose={() => {
+          setDrawerId(null);
+          if (params.get('open')) window.history.replaceState(null, '', '/leads');
+        }}
+        onChanged={load}
+      />
       <Toast msg={toast} />
     </>
   );
