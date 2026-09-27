@@ -52,6 +52,26 @@ const DDL: string[] = [
     duplicates INTEGER,
     created_at TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS sends_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lead_id TEXT, channel TEXT, mode TEXT, day TEXT, ts TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS samples (
+    lead_id TEXT PRIMARY KEY,
+    token TEXT UNIQUE,
+    sent_at TEXT, submitted_at TEXT,
+    answers TEXT DEFAULT '[]',
+    machine_score INTEGER, machine_parts TEXT DEFAULT '[]',
+    human_score INTEGER, status TEXT DEFAULT 'sent'
+  )`,
+  `CREATE TABLE IF NOT EXISTS corrections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lead_id TEXT, machine INTEGER, human INTEGER, delta INTEGER, ts TEXT, actor TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT, actor TEXT, action TEXT, entity TEXT, detail TEXT
+  )`,
 ];
 
 let instance: DatabaseSync | null = null;
@@ -68,6 +88,7 @@ export function getDb(): DatabaseSync {
   mkdirSync(DATA_DIR, { recursive: true });
   instance = new DatabaseSync(DB_PATH);
   instance.prepare('PRAGMA journal_mode = WAL').run();
+  instance.prepare('PRAGMA busy_timeout = 5000').run();
   if (needsMigration(instance)) {
     instance.prepare('DROP TABLE IF EXISTS leads').run();
     instance.prepare('DROP TABLE IF EXISTS imports').run();

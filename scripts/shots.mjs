@@ -21,7 +21,26 @@ async function launch() {
 const browser = await launch();
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1.5 });
 
-await fetch('http://localhost:3777/api/seed', { method: 'POST' });
+// 登录（会话 cookie 在整个 context 内有效）
+{
+  const page = await ctx.newPage();
+  await page.goto('http://localhost:3777/login', { waitUntil: 'networkidle' });
+  await page.screenshot({ path: 'demo/shots/v2-login.png' });
+  console.log('shot: v2-login');
+  await page.locator('input[type="password"]').fill('onely2026');
+  await page.getByRole('button', { name: '进入作战台' }).click();
+  await page.waitForTimeout(1200);
+  await page.close();
+}
+
+const authedFetch = async (path, opts = {}) => {
+  const cookies = await ctx.cookies();
+  return fetch('http://localhost:3777' + path, {
+    ...opts,
+    headers: { ...(opts.headers || {}), cookie: cookies.map((c) => `${c.name}=${c.value}`).join('; ') },
+  });
+};
+await authedFetch('/api/seed', { method: 'POST' });
 
 const pages = [
   { url: '/', name: 'v2-dashboard', full: true },
@@ -43,6 +62,7 @@ for (const p of pages) {
 
 // 抽屉打开态
 {
+  await authedFetch('/api/seed', { method: 'POST' });
   const page = await ctx.newPage();
   await page.goto('http://localhost:3777/leads', { waitUntil: 'networkidle' });
   await page.waitForTimeout(900);
@@ -50,6 +70,15 @@ for (const p of pages) {
   await page.waitForTimeout(900);
   await page.screenshot({ path: 'demo/shots/v2-drawer.png' });
   console.log('shot: v2-drawer');
+  await page.getByRole('button', { name: '样题与校准' }).click();
+  await page.waitForTimeout(600);
+  const sendBtn = page.getByRole('button', { name: '发放样题' });
+  if (await sendBtn.count()) {
+    await sendBtn.click();
+    await page.waitForTimeout(900);
+  }
+  await page.screenshot({ path: 'demo/shots/v2-drawer-sample.png' });
+  console.log('shot: v2-drawer-sample');
   await page.close();
 }
 
@@ -63,6 +92,6 @@ for (const p of pages) {
   await page.close();
 }
 
-await fetch('http://localhost:3777/api/seed', { method: 'POST' });
+await authedFetch('/api/seed', { method: 'POST' });
 await browser.close();
 console.log('DONE');

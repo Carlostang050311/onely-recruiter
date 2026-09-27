@@ -1,5 +1,12 @@
 'use client';
-// 范围与假设 —— 已实现功能 vs 待验证假设
+// 范围与假设 —— 已实现功能 vs 待验证假设 + 校准/审计/PII 留存运维卡
+import { useEffect, useState } from 'react';
+import Toast from '../../components/Toast';
+
+interface AuditInfo {
+  audit: { id: number; ts: string; actor: string; action: string; entity: string; detail: string }[];
+  calibration: { n: number; meanAbsDelta: number | null; within10Pct: number | null };
+}
 
 const DONE: [string, string][] = [
   ['线索导入', 'CSV 文件 / 粘贴导入，表头智能映射（含中文别名），含演示 CSV 与模板下载'],
@@ -26,8 +33,99 @@ const HYPO: [string, string][] = [
 ];
 
 export default function ScopePage() {
+  const [info, setInfo] = useState<AuditInfo | null>(null);
+  const [toast, setToast] = useState('');
+
+  useEffect(() => {
+    fetch('/api/audit')
+      .then((r) => r.json())
+      .then((d) => setInfo(d as AuditInfo))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(''), 2600);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const cal = info?.calibration;
+
   return (
     <>
+      <div className="grid section-gap" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
+        <div className="card">
+          <div className="card-title">机评校准 <span className="sub">人工修正留痕</span></div>
+          {cal && cal.n > 0 ? (
+            <>
+              <div className="kpi-val num" style={{ fontFamily: '"Noto Serif SC",serif', fontSize: 26 }}>
+                ±{cal.meanAbsDelta}
+              </div>
+              <div className="small muted">平均绝对偏差 · {cal.n} 条修正 · ±10 内占 {cal.within10Pct}%</div>
+            </>
+          ) : (
+            <div className="small muted">暂无人工修正记录。在抽屉「样题与校准」保存修正后，这里出一致性报告。</div>
+          )}
+        </div>
+        <div className="card">
+          <div className="card-title">PII 留存策略 <span className="sub">lost 超期自动匿名化</span></div>
+          <button
+            className="btn btn-sm"
+            onClick={async () => {
+              const res = await fetch('/api/admin/retention', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ days: 90 }),
+              });
+              const d = (await res.json()) as { anonymized: number; error?: string };
+              setToast(d.error ? d.error : `已匿名化 ${d.anonymized} 条超期 lost 线索`);
+              fetch('/api/audit').then((r) => r.json()).then((x) => setInfo(x as AuditInfo));
+            }}
+          >
+            执行留存清理（lost &gt; 90 天）
+          </button>
+          <div className="small muted mt8">GDPR / 菲律宾 DPA 口径：姓名替换为 Anonymized-ID，清空联系方式与备注。</div>
+        </div>
+        <div className="card">
+          <div className="card-title">发送限频 <span className="sub">每渠道每日 SEND_CAP</span></div>
+          <div className="small muted">
+            默认 100 条/渠道/日，超出返回 429。邮件真发需配置 EMAIL_PROVIDER / EMAIL_API_KEY / EMAIL_FROM；退订页脚自动附加。Telegram
+            生产接线经自有出口代理。
+          </div>
+        </div>
+      </div>
+
+      <div className="card section-gap">
+        <div className="card-title">审计日志 <span className="sub">最近 15 条</span></div>
+        <div className="table-wrap" style={{ border: 'none' }}>
+          <table className="status-table" style={{ tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: 150 }} />
+              <col style={{ width: 90 }} />
+              <col style={{ width: 150 }} />
+              <col style={{ width: 90 }} />
+              <col />
+            </colgroup>
+            <tbody>
+              {(info?.audit ?? []).slice(0, 15).map((a) => (
+                <tr key={a.id}>
+                  <td className="num muted">{a.ts.slice(5, 16).replace('T', ' ')}</td>
+                  <td>{a.actor}</td>
+                  <td>{a.action}</td>
+                  <td className="muted">{a.entity}</td>
+                  <td className="muted">{a.detail}</td>
+                </tr>
+              ))}
+              {!(info?.audit ?? []).length && (
+                <tr>
+                  <td colSpan={5} className="muted">暂无审计记录</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div className="card section-gap">
         <div className="card-title">已实现功能（本原型可直接操作）</div>
         <div className="table-wrap" style={{ border: 'none' }}>
@@ -82,8 +180,11 @@ export default function ScopePage() {
           <li><b>数据边界</b>：预置 54 条线索为虚构样本，不代表真实个人；重置演示数据可随时恢复</li>
           <li><b>生产化缺口</b>：合规采集器 / 多人协作权限与审计 / 真实 LLM 接口 / 邮件与 IM 群发通道及域名预热 / KYC 合同与支付</li>
           <li><b>合规提示</b>：真实采集须遵守各平台服务条款与数据保护法规，群发须控制频率、提供退订，避免账号封禁</li>
+          <li><b>认证与审计</b>：会话 cookie + 角色（operator/lead/finance）；重置/批量/导出/留存需 lead 或 finance；全部写操作进审计日志</li>
+          <li><b>事件驱动</b>：回复/筛选表/电子签/样题提交经 webhook 自动推进状态，回复带意图分类（感兴趣/提问/拒绝）</li>
         </ul>
       </div>
+      <Toast msg={toast} />
     </>
   );
 }

@@ -1,29 +1,46 @@
 // GET /api/leads?country=&source=&tier=&status=&q= ；POST /api/leads 新建线索
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '../../../lib/db';
-import { allLeads, insertLead, regrade, addActivity, nextLeadIds } from '../../../lib/store';
-import type { Lead } from '../../../lib/types';
-import { todayStr } from '../../../lib/types';
+import { insertLead, regrade, addActivity, nextLeadIds } from '../../../lib/store';
+import type { Lead, LeadRow } from '../../../lib/types';
+import { rowToLead, todayStr } from '../../../lib/types';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
-  let leads = allLeads(getDb());
+  const db = getDb();
+  const where: string[] = [];
+  const args: (string | number)[] = [];
   const country = sp.get('country');
   const source = sp.get('source');
   const tier = sp.get('tier');
   const status = sp.get('status');
   const q = (sp.get('q') ?? '').toLowerCase();
-  if (country) leads = leads.filter((l) => l.country === country);
-  if (source) leads = leads.filter((l) => l.source === source);
-  if (tier) leads = leads.filter((l) => l.tier === tier);
-  if (status) leads = leads.filter((l) => l.status === status);
-  if (q)
-    leads = leads.filter((l) =>
-      (l.name + l.city + l.notes + l.role + l.email).toLowerCase().indexOf(q) >= 0
-    );
-  return NextResponse.json({ leads, count: leads.length });
+  if (country) {
+    where.push('country = ?');
+    args.push(country);
+  }
+  if (source) {
+    where.push('source = ?');
+    args.push(source);
+  }
+  if (tier) {
+    where.push('tier = ?');
+    args.push(tier);
+  }
+  if (status) {
+    where.push('status = ?');
+    args.push(status);
+  }
+  if (q) {
+    where.push('(name LIKE ? OR city LIKE ? OR notes LIKE ? OR role LIKE ? OR email LIKE ?)');
+    const like = `%${q}%`;
+    args.push(like, like, like, like, like);
+  }
+  const sql = `SELECT * FROM leads${where.length ? ' WHERE ' + where.join(' AND ') : ''} ORDER BY created_at DESC, id ASC`;
+  const rows = db.prepare(sql).all(...args) as unknown as LeadRow[];
+  return NextResponse.json({ leads: rows.map(rowToLead), count: rows.length });
 }
 
 export async function POST() {

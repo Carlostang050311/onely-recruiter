@@ -7,7 +7,7 @@ import { scoreParts } from '../lib/scoring';
 import { buildMessage } from '../lib/copy';
 import { Icon } from './Icons';
 
-type TabKey = 'score' | 'msg' | 'log' | 'edit';
+type TabKey = 'score' | 'msg' | 'log' | 'edit' | 'sample';
 
 const EN_LABEL: Record<string, string> = { native: '母语级', fluent: '流利', conversational: '日常交流' };
 const CLIENT_LABEL: Record<string, string> = { us_creator: '美国创作者', eu_creator: '欧洲创作者', agency: '代理机构' };
@@ -28,6 +28,19 @@ export default function Drawer({
   const [msg, setMsg] = useState<{ subject: string; body: string } | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [toast, setToast] = useState('');
+  const [sample, setSample] = useState<Record<string, unknown> | null>(null);
+  const [humanScore, setHumanScore] = useState('');
+
+  useEffect(() => {
+    if (lead && tab === 'sample') {
+      fetch(`/api/leads/${lead.id}/sample`)
+        .then((r) => r.json())
+        .then((d) => {
+          setSample(d.sample);
+          setHumanScore(d.sample?.human_score != null ? String(d.sample.human_score) : '');
+        });
+    }
+  }, [lead, tab]);
 
   useEffect(() => {
     if (lead) {
@@ -130,9 +143,9 @@ export default function Drawer({
             </div>
             <div className="drawer-body">
               <div className="tabs">
-                {(['score', 'msg', 'log', 'edit'] as TabKey[]).map((t) => (
+                {(['score', 'msg', 'log', 'edit', 'sample'] as TabKey[]).map((t) => (
                   <button key={t} className={`tab${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
-                    {t === 'score' ? '评分与资料' : t === 'msg' ? '触达文案' : t === 'log' ? '跟进动态' : '编辑'}
+                    {t === 'score' ? '评分与资料' : t === 'msg' ? '触达文案' : t === 'log' ? '跟进动态' : t === 'edit' ? '编辑' : '样题与校准'}
                   </button>
                 ))}
               </div>
@@ -273,6 +286,97 @@ export default function Drawer({
                     </div>
                   </div>
                   <button className="btn btn-primary mt16" onClick={saveEdit}>保存更改</button>
+                </div>
+              )}
+              {tab === 'sample' && (
+                <div>
+                  {!sample ? (
+                    <>
+                      <p className="small muted" style={{ marginBottom: 10 }}>
+                        发放 3 条脚本化粉丝消息、候选人限时人设回复；提交后按 rubric 机评（共情 30 / 人设 25 / 语法 20 / 转化 15 / 红线
+                        10），人工修正会留痕用于机评校准。
+                      </p>
+                      <button
+                        className="btn btn-primary"
+                        onClick={async () => {
+                          const res = await fetch(`/api/leads/${lead.id}/sample`, {
+                            method: 'POST',
+                            headers: { 'content-type': 'application/json' },
+                            body: JSON.stringify({ action: 'send' }),
+                          });
+                          const d = (await res.json()) as { token: string };
+                          setSample({ status: 'sent', token: d.token });
+                          setToast('样题已发放');
+                        }}
+                      >
+                        发放样题
+                      </button>
+                    </>
+                  ) : sample.status === 'sent' ? (
+                    <>
+                      <div className="flab">样题链接（token 即密钥，发给候选人）</div>
+                      <div className="msg-box" style={{ maxHeight: 60 }}>
+                        {typeof window !== 'undefined' ? window.location.origin : ''}/sample/{String(sample.token)}
+                      </div>
+                      <div className="toolbar mt8">
+                        <button
+                          className="btn btn-sm"
+                          onClick={() => {
+                            navigator.clipboard.writeText(
+                              `${window.location.origin}/sample/${String(sample.token)}`
+                            );
+                            setToast('链接已复制');
+                          }}
+                        >
+                          复制链接
+                        </button>
+                        <span className="small muted">等待候选人提交，提交后自动机评</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="card-title">
+                        机评明细 <span className="sub num">{String(sample.machine_score)} 分 · 已提交 {String(sample.submitted_at)}</span>
+                      </div>
+                      {((sample.machine_parts as { k: string; w: number; v: number; d: string }[]) ?? []).map((p) => (
+                        <div className="score-row" key={p.k}>
+                          <span className="lab">{p.k}</span>
+                          <span className="bar">
+                            <i style={{ width: `${(p.v / p.w) * 100}%` }} />
+                          </span>
+                          <span className="val num">{p.v}/{p.w}</span>
+                        </div>
+                      ))}
+                      <div className="small muted mt8">
+                        依据：{((sample.machine_parts as { d: string }[]) ?? []).map((p) => p.d).join(' · ')}
+                      </div>
+                      <div className="toolbar mt16">
+                        <label className="flab" style={{ margin: 0 }}>人工修正分（留痕进校准）</label>
+                        <input
+                          className="field"
+                          type="number"
+                          style={{ width: 90 }}
+                          value={humanScore}
+                          onChange={(e) => setHumanScore(e.target.value)}
+                        />
+                        <button
+                          className="btn btn-sm btn-primary"
+                          onClick={async () => {
+                            await fetch(`/api/leads/${lead.id}/sample`, {
+                              method: 'POST',
+                              headers: { 'content-type': 'application/json' },
+                              body: JSON.stringify({ action: 'correct', human_score: Number(humanScore) }),
+                            });
+                            const d = await (await fetch(`/api/leads/${lead.id}/sample`)).json();
+                            setSample(d.sample);
+                            setToast('修正已留痕');
+                          }}
+                        >
+                          保存修正
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>

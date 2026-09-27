@@ -21,8 +21,8 @@ npm run build && npm run start
 
 - 首次打开自动灌入 54 条演示线索（预置漏斗：7 入驻 / 6 通过 / 9 回复 / 15 触达 / 17 新）。
 - 重置演示数据：顶栏「重置演示数据」，或 `curl -X POST http://localhost:3777/api/seed`。
-- 测试：`npm test`（33 个用例：CSV 解析与别名映射 / 三键去重合并 / 7 维评分 / 钩子文案）。
-- 接口冒烟：先启动服务，再 `node scripts/smoke.mjs`。
+- 测试：`npm test`（47 个用例：CSV 解析与别名映射 / 三键去重合并 / 7 维评分 / 钩子文案 / 意图分类 / 样题 rubric / 会话与令牌 / PII 留存 / 限频 / 校准统计）。
+- 接口冒烟：先启动服务，再 `node scripts/smoke.mjs`（17 项：含登录 RBAC、事件 webhook、样题闭环、退订、留存、审计）。
 - 六视图截图：`node scripts/shots.mjs`（含参照稿对照帧，输出到 `demo/shots/`）。
 
 ---
@@ -70,7 +70,30 @@ npm run build && npm run start
 
 ---
 
-## 五、安全与合规说明
+## 五、战役引擎与生产护栏
+
+**认证与 RBAC**：会话 cookie（HMAC 签名，Web Crypto 双运行时）；角色 operator / lead / finance。重置、批量、导出、留存清理需 lead 或 finance。环境变量：`USERS="id:pass:role;…"`、`SESSION_SECRET`；开发默认 `dev / onely2026`（lead）、`ops / onely2026`（operator），登录页仅开发环境显示提示。
+
+**事件驱动自动推进**（webhook，`x-webhook-key` 默认 `onely-hook`，生产用 `WEBHOOK_SECRET`）：
+
+```bash
+curl -X POST localhost:3777/api/webhook -H 'content-type: application/json' -H 'x-webhook-key: onely-hook' \
+  -d '{"type":"reply","email":"x@y.com","text":"How does the payout work?"}'   # 意图分类→已回复/流失
+curl -X POST localhost:3777/api/webhook ... -d '{"type":"form","email":"x@y.com","quiz_score":5}'  # ≥4 自动通过筛选
+curl -X POST localhost:3777/api/webhook ... -d '{"type":"sign","email":"x@y.com"}'                 # 电子签→已入驻
+```
+
+生产接线：表单平台（Tally/Google Form）→ form；ESP 入站（Postmark inbound）或 IMAP 轮询 → reply；电子签回调 → sign。
+
+**真实发送通道与合规**：配置 `EMAIL_PROVIDER=resend|postmark` + `EMAIL_API_KEY` + `EMAIL_FROM` 后邮件真发（endpoint 硬编码字面量 host）；未配置即模拟发送。邮件自动附加退订页脚（`/api/unsubscribe?t=<hmac>`，退订即流失）。每渠道日限频 `SEND_CAP`（默认 100，超出 429）。Telegram 生产接线请经自有出口代理（代理侧做 host 白名单），原型阶段模拟。
+
+**样题闭环与校准**：抽屉「样题与校准」Tab 发放样题 → 候选人公开页 `/sample/<token>` 作答 3 条脚本化粉丝消息 → 提交后规则版 rubric 机评（共情 30 / 人设 25 / 语法 20 / 转化 15 / 红线 10）→ 人工修正留痕 → 「范围与假设」页出机评人评一致性报告（平均绝对偏差、±10 内占比）。机评 <60 自动提示 waitlist/婉拒。
+
+**审计与 PII 留存**：全部写操作（发送/推进/编辑/导入/重置/修正/留存）进审计日志（scope 页可见最近 15 条）；`POST /api/admin/retention {days:90}` 将超期 lost 线索匿名化（姓名→Anonymized-ID，清空联系方式与备注），scope 页有一键按钮。
+
+---
+
+## 六、安全与合规说明
 
 - 服务端不抓取任意 URL；导入一律走 CSV/表单回收。
 - 演示数据为虚构；真实使用时导入源须带候选人同意文本，遵守各平台 ToS 与数据保护法规，群发控频并提供退订。
@@ -78,7 +101,7 @@ npm run build && npm run start
 
 ---
 
-## 六、演示视频
+## 七、演示视频
 
 成品：`demo/onely-recruiter-demo.mp4`（3 分 45 秒，七节：仪表盘→导入去重→抽屉评分→跟进看板→触达台→增长方案与范围→降本收尾；中文配音 edge-tts Yunxi）。重新生成：
 
@@ -87,13 +110,16 @@ pip install edge-tts        # 配音；失败时脚本自动回落 Windows 自�
 node scripts/make-video.mjs # 分节录屏(Playwright) + 配音 + ffmpeg 合成
 ```
 
-## 七、项目结构
+## 八、项目结构
 
 ```
 src/lib/        types / scoring(7维) / dedup(三键合并) / copy(6模板+钩子) / csv+csv-base / seed / stats / store / db
-src/app/        六视图页面 + /api（leads、import、export、bulk、[id]、[id]/stage、[id]/message、stats、seed）
-src/components/ Nav / Topbar / Drawer / Toast / Icons / charts(ECharts) / motion / Providers / RouteFade
-tests/          vitest 单元用例
+                auth(会话+令牌) / audit / sender(真发+限频+退订) / sample(rubric+校准) / retention / classify / roles
+src/app/        六视图 + login + sample/[token] 公开页 + /api（leads、import、export、bulk、[id]、[id]/stage、
+                [id]/message、[id]/sample、webhook、webhook/sample、unsubscribe、login、audit、admin/retention、stats、seed）
+src/middleware.ts  认证门与 RBAC
+src/components/ Nav / Topbar / AppShell / Drawer(5 Tab) / Toast / Icons / charts(ECharts) / motion / Providers / RouteFade
+tests/          vitest 单元用例（5 文件 47 例）
 scripts/        smoke 冒烟 / shots 截图(含参照稿对照) / make-video 演示视频
 public/         sample-leads.csv（含故意重复）/ lead-template.csv
 demo/           shots 截图与成片

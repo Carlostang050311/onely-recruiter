@@ -1,8 +1,6 @@
 import type { Metadata } from 'next';
-import Nav from '../components/Nav';
-import Topbar from '../components/Topbar';
 import Providers from '../components/Providers';
-import RouteFade from '../components/RouteFade';
+import AppShell from '../components/AppShell';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -19,13 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap"
         />
         <Providers>
-          <div className="app">
-            <Nav />
-            <div className="main">
-              <Topbar />
-              <RouteFade>{children}</RouteFade>
-            </div>
-          </div>
+          <AppShell>{children}</AppShell>
         </Providers>
       </body>
     </html>

@@ -162,8 +162,7 @@ async function launch() {
 }
 
 async function main() {
-  await fetch(`${BASE}/api/seed`, { method: 'POST' });
-  console.log('server ok, seed reset');
+  console.log('server check');
 
   const audio = [];
   for (const s of SECTIONS) {
@@ -179,6 +178,24 @@ async function main() {
     recordVideo: { dir: RAW, size: { width: 1440, height: 900 } },
   });
   await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
+
+  // 登录（cookie 在 context 内共享；登录页不录制）
+  {
+    const page = await ctx.newPage();
+    await page.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
+    await page.locator('input[type="password"]').fill('onely2026');
+    await page.getByRole('button', { name: '进入作战台' }).click();
+    await page.waitForTimeout(1000);
+    await page.close();
+  }
+
+  const authedFetch = async (path, opts = {}) => {
+    return fetch(BASE + path, { ...opts, headers: { ...(opts.headers || {}), cookie: cookieHeader } });
+  };
+  const cookies = await ctx.cookies();
+  const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+  await authedFetch('/api/seed', { method: 'POST' });
+  console.log('seed reset');
 
   const recorded = [];
   for (const s of audio) {
@@ -212,7 +229,7 @@ async function main() {
   execFileSync('ffmpeg', ['-y', '-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', OUT], { stdio: 'pipe' });
   console.log('FINAL:', OUT, durOf(OUT).toFixed(1) + 's');
 
-  await fetch(`${BASE}/api/seed`, { method: 'POST' });
+  await authedFetch('/api/seed', { method: 'POST' });
 }
 
 main().catch((e) => {
