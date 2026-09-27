@@ -11,7 +11,7 @@ function esc(v: unknown): string {
 }
 
 export async function GET() {
-  const rows = getDb().prepare('SELECT * FROM leads ORDER BY id').all() as LeadRow[];
+  const rows = getDb().prepare('SELECT * FROM leads ORDER BY id').all() as unknown as LeadRow[];
   const header = [
     'id', 'first_name', 'last_name', 'email', 'handle', 'location', 'channel', 'platforms',
     'score', 'tier', 'status', 'english_sample', 'hours_per_week',

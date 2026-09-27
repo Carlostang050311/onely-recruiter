@@ -7,6 +7,6 @@ import type { LeadRow } from '../../../lib/types';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const rows = getDb().prepare('SELECT * FROM leads').all() as LeadRow[];
+  const rows = getDb().prepare('SELECT * FROM leads').all() as unknown as LeadRow[];
   return NextResponse.json(computeStats(rows));
 }

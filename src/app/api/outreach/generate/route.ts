@@ -1,9 +1,9 @@
 // POST /api/outreach/generate  body: { ids: number[], day: 0|1|2 }
 // 按渠道模板生成个性化文案并写回线索；返回供 UI 预览。
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '../../../lib/db';
-import { generateMessage } from '../../../lib/copy';
-import type { LeadRow } from '../../../lib/types';
+import { getDb } from '../../../../lib/db';
+import { generateMessage } from '../../../../lib/copy';
+import type { LeadRow } from '../../../../lib/types';
 
 export const dynamic = 'force-dynamic';
 

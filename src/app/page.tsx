@@ -104,8 +104,10 @@ export default function Dashboard() {
             ))}
           </div>
           <div className="small muted" style={{ marginTop: 12 }}>
-            累计 <b style={{ color: 'var(--text)' }}>{cumActual}</b> / 目标线 {pace.reduce((s, d) => Math.min(s, d.targetCum), 100)} ·
-            按当前速率预计 <b style={{ color: 'var(--text)' }}>{Math.max(0, Math.ceil((remain / Math.max(cumActual / 2.6, 1))))}</b> 天后补齐缺口
+            累计 <b style={{ color: 'var(--text)' }}>{cumActual}</b> / D{totals.currentDay} 目标线{' '}
+            <b style={{ color: 'var(--text)' }}>{totals.targetNow}</b> · 按当前速率预计{' '}
+            <b style={{ color: 'var(--text)' }}>{Math.max(0, Math.ceil(remain / Math.max(cumActual / 2.6, 1)))}</b>{' '}
+            天后补齐缺口
           </div>
         </div>
       </div>

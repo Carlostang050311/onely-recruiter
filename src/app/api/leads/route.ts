@@ -40,6 +40,6 @@ export async function GET(req: NextRequest) {
   };
   const sort = sortMap[sp.get('sort') ?? 'score'] ?? 'score DESC';
   const sql = `SELECT * FROM leads${where.length ? ' WHERE ' + where.join(' AND ') : ''} ORDER BY ${sort}`;
-  const rows = db.prepare(sql).all(...args) as LeadRow[];
+  const rows = db.prepare(sql).all(...args) as unknown as LeadRow[];
   return NextResponse.json({ leads: rows, count: rows.length });
 }

@@ -1,7 +1,7 @@
 // 评分与分级。满分 100，权重见 AGENTS.md。
 // A ≥75 当天直发 offer；B 55–74 备选池滚动补位；C <55 淘汰或转内容岗。
 
-import type { LeadInput, LeadRow, Tier } from './types';
+import type { Tier } from './types';
 
 export const CHANNEL_WEIGHT: Record<string, number> = {
   telegram_community: 12,
@@ -24,6 +24,18 @@ export interface ScoreResult {
   reasons: string[]; // 加分点说明，供 UI 展示
 }
 
+/** 宽松入参：库行（platforms 为 JSON 字符串）与导入中间结构（string[]）都能直接打分 */
+export interface Scorable {
+  channel: string;
+  platforms: string[] | string;
+  us_clients_exp?: unknown;
+  chat_exp?: unknown;
+  crm_exp?: unknown;
+  hours_per_week?: number | string;
+  us_shift?: unknown;
+  english_sample?: number | string;
+}
+
 function bool(v: unknown): boolean {
   if (typeof v === 'boolean') return v;
   if (typeof v === 'number') return v !== 0;
@@ -31,17 +43,7 @@ function bool(v: unknown): boolean {
   return false;
 }
 
-export function scoreLead(lead: Pick<
-  LeadInput & LeadRow,
-  | 'channel'
-  | 'platforms'
-  | 'us_clients_exp'
-  | 'chat_exp'
-  | 'crm_exp'
-  | 'hours_per_week'
-  | 'us_shift'
-  | 'english_sample'
->): ScoreResult {
+export function scoreLead(lead: Scorable): ScoreResult {
   let score = 0;
   const reasons: string[] = [];
 

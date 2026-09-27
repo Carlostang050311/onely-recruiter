@@ -41,6 +41,8 @@ export interface Stats {
     targetPct: number;
     followupsDue: number;
     aTier: number;
+    currentDay: number; // 冲刺第几天（1-3）
+    targetNow: number; // 当前应达累计目标线
   };
   funnel: FunnelStage[];
   byChannel: ChannelRow[];
@@ -66,7 +68,7 @@ export function computeStats(rows: LeadRow[], now = Date.now()): Stats {
       status: s,
       label: STATUS_LABELS[s],
       reached: n,
-      convFromPrev: idx === 0 ? null : pct(n, prev),
+      convFromPrev: idx === 0 || prev === null ? null : pct(n, prev),
     };
   });
 
@@ -123,6 +125,8 @@ export function computeStats(rows: LeadRow[], now = Date.now()): Stats {
       targetPct: pct(onboarded, TARGET) ?? 0,
       followupsDue,
       aTier: rows.filter((r) => r.tier === 'A').length,
+      currentDay: Math.min(3, Math.max(1, Math.floor((now - startTs) / dayMs) + 1)),
+      targetNow: TARGET_CUM[Math.min(2, Math.max(0, Math.floor((now - startTs) / dayMs)))],
     },
     funnel,
     byChannel,

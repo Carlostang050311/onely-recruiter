@@ -24,7 +24,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if (body.status) {
     updates.push('status = ?');
     args.push(body.status);
-    const tsField = STATUS_TS[body.status];
+    const tsField = body.status !== 'new' ? STATUS_TS[body.status] : null;
     if (tsField && !lead[tsField as keyof LeadRow]) {
       updates.push(`${tsField} = ?`);
       args.push(now);
@@ -47,6 +47,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     args.push(leadId);
     db.prepare(`UPDATE leads SET ${updates.join(', ')} WHERE id = ?`).run(...args);
   }
-  const updated = db.prepare('SELECT * FROM leads WHERE id = ?').get(leadId) as LeadRow;
+  const updated = db.prepare('SELECT * FROM leads WHERE id = ?').get(leadId) as unknown as LeadRow;
   return NextResponse.json({ lead: updated });
 }

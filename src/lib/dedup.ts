@@ -110,8 +110,9 @@ export function dedupLeads(
         against: dup.against,
       });
     } else {
-      kept.push(lead);
-      seen.push({ keys: k, label: `file:${lead._row ?? kept.length}` });
+      const { _row, ...clean } = lead;
+      kept.push(clean as LeadInput);
+      seen.push({ keys: k, label: `file:${_row ?? kept.length}` });
     }
   }
 

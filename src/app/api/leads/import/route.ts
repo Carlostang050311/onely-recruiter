@@ -1,11 +1,11 @@
 // POST /api/leads/import  body: { csv: string, filename?: string }
 // 解析 → 批内 + 库内去重 → 自动评分分级 → 入库；返回导入报告。
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '../../../lib/db';
-import { parseCsvTable, toBool, toInt, toEnglishScore } from '../../../lib/csv';
-import { dedupLeads } from '../../../lib/dedup';
-import { scoreLead, safeParsePlatforms } from '../../../lib/scoring';
-import type { Channel, LeadInput, LeadRow } from '../../../lib/types';
+import { getDb } from '../../../../lib/db';
+import { parseCsvTable, toBool, toInt, toEnglishScore } from '../../../../lib/csv';
+import { dedupLeads } from '../../../../lib/dedup';
+import { scoreLead, safeParsePlatforms } from '../../../../lib/scoring';
+import type { Channel, LeadInput, LeadRow } from '../../../../lib/types';
 
 export const dynamic = 'force-dynamic';
 
