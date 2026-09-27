@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import Nav from '../components/Nav';
+import Providers from '../components/Providers';
+import RouteFade from '../components/RouteFade';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -11,10 +13,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="zh-CN">
       <body>
-        <div className="shell">
-          <Nav />
-          <main className="main">{children}</main>
-        </div>
+        <Providers>
+          <div className="shell">
+            <Nav />
+            <RouteFade>{children}</RouteFade>
+          </div>
+        </Providers>
       </body>
     </html>
   );

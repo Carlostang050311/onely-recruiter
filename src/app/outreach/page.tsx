@@ -1,9 +1,12 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { CHANNELS, STATUS_LABELS, channelLabel } from '../../lib/types';
 import type { LeadRow, Status } from '../../lib/types';
 import { DAY_LABELS } from '../../lib/copy';
 import type { FollowupDay } from '../../lib/copy';
+import Toast from '../../components/Toast';
+import { Skeleton } from '../../components/motion';
 
 interface Msg {
   id: number;
@@ -33,6 +36,7 @@ export default function OutreachPage() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState('');
+  const [copiedId, setCopiedId] = useState<number | null>(null);
   const [aiCfg, setAiCfg] = useState<AiCfg>({ enabled: false, base: '', key: '', model: 'gpt-4o-mini' });
 
   const showToast = (m: string) => {
@@ -147,6 +151,8 @@ export default function OutreachPage() {
     const text = m.subject ? `Subject: ${m.subject}\n\n${m.body}` : m.body;
     try {
       await navigator.clipboard.writeText(text);
+      setCopiedId(m.id);
+      setTimeout(() => setCopiedId(null), 1500);
       showToast(`已复制给 ${m.name} 的文案`);
     } catch {
       showToast('复制失败，请手动选择文本');
@@ -248,22 +254,61 @@ export default function OutreachPage() {
         </details>
       </div>
 
+      {busy && msgs.length === 0 && (
+        <div className="msg-grid">
+          {[...Array(4)].map((_, i) => (
+            <div className="msg-card" key={i}>
+              <Skeleton h={18} w={150} />
+              <Skeleton h={110} style={{ marginTop: 10 }} />
+            </div>
+          ))}
+        </div>
+      )}
+
       {msgs.length > 0 && (
         <div className="msg-grid">
-          {msgs.map((m) => (
-            <div className="msg-card" key={m.id}>
+          {msgs.map((m, i) => (
+            <motion.div
+              className={`msg-card${m.mode === 'ai' ? ' polished' : ''}`}
+              key={m.id}
+              initial={{ opacity: 0, y: 12, rotateX: -6 }}
+              animate={{ opacity: 1, y: 0, rotateX: 0 }}
+              transition={{ duration: 0.25, delay: Math.min(i * 0.08, 0.8), ease: 'easeOut' }}
+              style={{ transformPerspective: 600 }}
+            >
               <div className="head">
                 <div className="row" style={{ gap: 8 }}>
                   <b>{m.name}</b>
                   <span className={`chip tier-${m.tier ?? 'C'}`}>{m.tier}</span>
                   <span className="chip status">{channelLabel(m.channel)}</span>
                 </div>
-                <span className={`mode-badge ${m.mode === 'ai' ? 'ai' : 'tpl'}`}>{m.mode === 'ai' ? 'AI 润色' : '模板'}</span>
+                <motion.span
+                  key={m.mode}
+                  className={`mode-badge ${m.mode === 'ai' ? 'ai' : 'tpl'}`}
+                  initial={{ scale: 0.7, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 26 }}
+                >
+                  {m.mode === 'ai' ? 'AI 润色' : '模板'}
+                </motion.span>
               </div>
               {m.subject && <div className="subject">主题：{m.subject}</div>}
               <pre>{m.body}</pre>
               <div className="acts">
-                <button className="btn sm" onClick={() => copyText(m)}>复制</button>
+                <button className="btn sm" onClick={() => copyText(m)}>
+                  {copiedId === m.id ? (
+                    <motion.span
+                      key="ok"
+                      initial={{ scale: 0.6 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+                    >
+                      ✓ 已复制
+                    </motion.span>
+                  ) : (
+                    '复制'
+                  )}
+                </button>
                 {m.status === 'contacted' ? (
                   <span className="chip tier-A">已标记触达</span>
                 ) : (
@@ -272,12 +317,12 @@ export default function OutreachPage() {
                   </button>
                 )}
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
       )}
 
-      {toast && <div className="toast">{toast}</div>}
+      <Toast msg={toast} />
     </>
   );
 }

@@ -1,10 +1,34 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import type { Stats } from '../lib/stats';
 import { TARGET } from '../lib/stats';
+import { CountUp, Skeleton } from '../components/motion';
 
 function pctText(v: number | null): string {
   return v == null ? '—' : `${Math.round(v * 100)}%`;
+}
+
+function LoadingSkeleton() {
+  return (
+    <>
+      <div className="kpi-grid">
+        {[0, 1, 2, 3].map((i) => (
+          <div className="kpi" key={i}>
+            <Skeleton h={12} w={70} />
+            <Skeleton h={30} w={90} style={{ marginTop: 10 }} />
+            <Skeleton h={10} w={110} style={{ marginTop: 10 }} />
+          </div>
+        ))}
+      </div>
+      <div className="card">
+        <Skeleton h={14} w={180} />
+        {[...Array(7)].map((_, i) => (
+          <Skeleton key={i} h={26} style={{ marginTop: 10 }} />
+        ))}
+      </div>
+    </>
+  );
 }
 
 export default function Dashboard() {
@@ -18,7 +42,7 @@ export default function Dashboard() {
     load();
   }, [load]);
 
-  if (!stats) return <div className="muted">加载中…</div>;
+  if (!stats) return <LoadingSkeleton />;
 
   const { totals, funnel, byChannel, pace, rates } = stats;
   const maxReached = Math.max(...funnel.map((f) => f.reached), 1);
@@ -30,7 +54,10 @@ export default function Dashboard() {
       <div className="page-head row" style={{ justifyContent: 'space-between' }}>
         <div>
           <h2>数据看板</h2>
-          <p>三天冲刺实时漏斗 · 目标 {TARGET} 名 Operator 入驻</p>
+          <p>
+            <span className="live-dot" />
+            三天冲刺实时漏斗 · 目标 {TARGET} 名 Operator 入驻
+          </p>
         </div>
         <button className="btn ghost sm" onClick={load}>↻ 刷新</button>
       </div>
@@ -38,17 +65,23 @@ export default function Dashboard() {
       <div className="kpi-grid">
         <div className="kpi">
           <div className="label">线索总量</div>
-          <div className="value">{totals.leads}</div>
+          <div className="value">
+            <CountUp value={totals.leads} />
+          </div>
           <div className="sub small muted">去重后有效线索</div>
         </div>
         <div className="kpi">
           <div className="label">已入驻 / 目标</div>
           <div className="value">
-            {totals.onboarded} <small>/ {TARGET}</small>
+            <CountUp value={totals.onboarded} /> <small>/ {TARGET}</small>
           </div>
           <div className="sub">
             <div className="progress">
-              <div style={{ width: `${Math.min(100, totals.targetPct * 100)}%` }} />
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${Math.min(100, totals.targetPct * 100)}%` }}
+                transition={{ duration: 0.6, ease: 'easeOut' }}
+              />
             </div>
             <div className="small muted" style={{ marginTop: 6 }}>
               还差 {remain} 人 · 完成率 {Math.round(totals.targetPct * 100)}%
@@ -58,13 +91,15 @@ export default function Dashboard() {
         <div className="kpi">
           <div className="label">到期待跟进</div>
           <div className="value" style={{ color: totals.followupsDue ? 'var(--warn)' : undefined }}>
-            {totals.followupsDue}
+            <CountUp value={totals.followupsDue} />
           </div>
           <div className="sub small muted">D1 提醒 / Offer 催签</div>
         </div>
         <div className="kpi">
           <div className="label">A 级线索</div>
-          <div className="value" style={{ color: 'var(--ok)' }}>{totals.aTier}</div>
+          <div className="value" style={{ color: 'var(--ok)' }}>
+            <CountUp value={totals.aTier} />
+          </div>
           <div className="sub small muted">≥75 分 · 当天直发 Offer</div>
         </div>
       </div>
@@ -72,17 +107,27 @@ export default function Dashboard() {
       <div className="grid" style={{ gridTemplateColumns: '1.35fr 1fr', marginBottom: 16 }}>
         <div className="card">
           <h3>招募漏斗（按到达过该阶段统计）</h3>
-          {funnel.map((f) => (
+          {funnel.map((f, i) => (
             <div className="funnel-row" key={f.status}>
               <div className="small muted">{f.label}</div>
               <div className="funnel-bar-wrap">
-                <div className="funnel-bar" style={{ width: `${Math.max(4, (f.reached / maxReached) * 100)}%` }}>
+                <motion.div
+                  className="funnel-bar"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.max(4, (f.reached / maxReached) * 100)}%` }}
+                  transition={{ duration: 0.5, delay: 0.1 + i * 0.06, ease: 'easeOut' }}
+                >
                   {f.reached}
-                </div>
+                </motion.div>
               </div>
-              <div className="conv">
+              <motion.div
+                className="conv"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.25, delay: 0.1 + i * 0.06 + 0.35 }}
+              >
                 {f.convFromPrev == null ? '入口' : <>转化 <b>{pctText(f.convFromPrev)}</b></>}
-              </div>
+              </motion.div>
             </div>
           ))}
         </div>
@@ -90,17 +135,30 @@ export default function Dashboard() {
         <div className="card">
           <h3>三日节奏 vs 目标线</h3>
           <div className="grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-            {pace.map((d) => (
-              <div key={d.day} className="card" style={{ padding: 12, background: 'var(--panel-2)' }}>
+            {pace.map((d, i) => (
+              <motion.div
+                key={d.day}
+                className="card"
+                style={{ padding: 12, background: 'var(--panel-2)' }}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.25, delay: 0.15 + i * 0.08, ease: 'easeOut' }}
+              >
                 <div className="small muted">
                   {d.day} · {d.date}
                 </div>
-                <div style={{ fontSize: 22, fontWeight: 750, margin: '4px 0 8px' }}>{d.onboarded}</div>
+                <div style={{ fontSize: 22, fontWeight: 750, margin: '4px 0 8px' }}>
+                  <CountUp value={d.onboarded} />
+                </div>
                 <div className="progress">
-                  <div style={{ width: `${Math.min(100, (d.onboarded / 34) * 100)}%` }} />
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.min(100, (d.onboarded / 34) * 100)}%` }}
+                    transition={{ duration: 0.5, delay: 0.3 + i * 0.08, ease: 'easeOut' }}
+                  />
                 </div>
                 <div className="small muted" style={{ marginTop: 6 }}>日均目标 34</div>
-              </div>
+              </motion.div>
             ))}
           </div>
           <div className="small muted" style={{ marginTop: 12 }}>
@@ -122,11 +180,16 @@ export default function Dashboard() {
               ['样题完成率', rates.sampleRate],
               ['Offer 接受率', rates.acceptRate],
             ] as const
-          ).map(([label, v]) => (
-            <div key={label}>
+          ).map(([label, v], i) => (
+            <motion.div
+              key={label}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25, delay: 0.2 + i * 0.06, ease: 'easeOut' }}
+            >
               <div className="small muted">{label}</div>
               <div style={{ fontSize: 21, fontWeight: 750 }}>{pctText(v)}</div>
-            </div>
+            </motion.div>
           ))}
         </div>
       </div>
@@ -147,8 +210,13 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {byChannel.map((c) => (
-                <tr key={c.channel}>
+              {byChannel.map((c, i) => (
+                <motion.tr
+                  key={c.channel}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.22, delay: 0.1 + i * 0.04, ease: 'easeOut' }}
+                >
                   <td>{c.label}</td>
                   <td>{c.leads}</td>
                   <td>{c.contacted}</td>
@@ -162,7 +230,7 @@ export default function Dashboard() {
                   <td>
                     <b style={{ color: 'var(--ok)' }}>{c.onboarded}</b>
                   </td>
-                </tr>
+                </motion.tr>
               ))}
             </tbody>
           </table>

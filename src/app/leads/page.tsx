@@ -1,9 +1,12 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import { CHANNELS, STATUS_FLOW, STATUS_LABELS, channelLabel } from '../../lib/types';
 import type { LeadRow, Status } from '../../lib/types';
 import { scoreLead, safeParsePlatforms } from '../../lib/scoring';
 import type { DedupReportItem } from '../../lib/dedup';
+import Toast from '../../components/Toast';
+import { Skeleton } from '../../components/motion';
 
 interface ImportReport {
   totalRows: number;
@@ -26,14 +29,20 @@ export default function LeadsPage() {
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [toast, setToast] = useState('');
+  const [lastInserted, setLastInserted] = useState<number[]>([]);
+  const [loading, setLoading] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
     const sp = new URLSearchParams();
     for (const [k, v] of Object.entries(filters)) if (v) sp.set(k, v);
+    setLoading(true);
     fetch(`/api/leads?${sp}`)
       .then((r) => r.json())
-      .then((d) => setLeads(d.leads as LeadRow[]));
+      .then((d) => {
+        setLeads(d.leads as LeadRow[]);
+        setLoading(false);
+      });
   }, [filters]);
 
   useEffect(() => {
@@ -55,6 +64,7 @@ export default function LeadsPage() {
       });
       const data = (await res.json()) as ImportReport;
       setReport(data);
+      setLastInserted(data.insertedLeads.map((l) => l.id));
       load();
       showToast(`导入完成：新增 ${data.inserted} 条，重复 ${data.duplicates.length} 条`);
     } finally {
@@ -127,7 +137,12 @@ export default function LeadsPage() {
         </div>
 
         {report && (
-          <div className="report">
+          <motion.div
+            className="report"
+            initial={{ opacity: 0, scale: 0.97, y: -6 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+          >
             <div className="nums">
               <div>
                 <b>{report.totalRows}</b>
@@ -155,7 +170,11 @@ export default function LeadsPage() {
                 </thead>
                 <tbody>
                   {report.duplicates.map((d, i) => (
-                    <tr key={i}>
+                    <motion.tr
+                      key={i}
+                      animate={{ x: [0, -6, 6, -4, 4, 0] }}
+                      transition={{ duration: 0.45, delay: 0.35 + i * 0.1 }}
+                    >
                       <td>{d.row}</td>
                       <td>{d.name}</td>
                       <td>
@@ -163,7 +182,7 @@ export default function LeadsPage() {
                       </td>
                       <td className="sub">{d.matchedValue}</td>
                       <td className="sub">{d.against.startsWith('db:') ? `库内 #${d.against.slice(3)}` : `文件第 ${d.against.slice(5)} 行`}</td>
-                    </tr>
+                    </motion.tr>
                   ))}
                 </tbody>
               </table>
@@ -179,7 +198,7 @@ export default function LeadsPage() {
                 ))}
               </div>
             )}
-          </div>
+          </motion.div>
         )}
       </div>
 
@@ -220,6 +239,13 @@ export default function LeadsPage() {
           </div>
         </div>
 
+        {loading && leads.length === 0 ? (
+          <div style={{ padding: '6px 2px' }}>
+            {[...Array(8)].map((_, i) => (
+              <Skeleton key={i} h={44} style={{ marginBottom: 8 }} />
+            ))}
+          </div>
+        ) : (
         <div className="table-wrap">
           <table>
             <thead>
@@ -240,9 +266,25 @@ export default function LeadsPage() {
                 const open = expanded === l.id;
                 return (
                   <>
-                    <tr key={l.id} style={{ cursor: 'pointer' }} onClick={() => setExpanded(open ? null : l.id)}>
+                    <tr
+                      key={l.id}
+                      className={lastInserted.includes(l.id) ? 'flash-new' : undefined}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => setExpanded(open ? null : l.id)}
+                    >
                       <td>
                         <b>{l.first_name} {l.last_name}</b>
+                        {lastInserted.includes(l.id) && (
+                          <motion.span
+                            className="chip tier-A"
+                            style={{ marginLeft: 6 }}
+                            initial={{ scale: 0.6, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            transition={{ type: 'spring', stiffness: 500, damping: 24, delay: 0.2 }}
+                          >
+                            新
+                          </motion.span>
+                        )}
                         <div className="sub">{l.handle || l.email}</div>
                       </td>
                       <td>{l.location}</td>
@@ -256,7 +298,15 @@ export default function LeadsPage() {
                         <span className={`chip tier-${l.tier ?? 'C'}`}>{l.tier ?? '—'}</span>
                       </td>
                       <td>
-                        <span className={`chip status s-${l.status}`}>{STATUS_LABELS[l.status]}</span>
+                        <motion.span
+                          key={l.status}
+                          className={`chip status s-${l.status}`}
+                          initial={{ scale: 0.85, opacity: 0.4 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          transition={{ duration: 0.18, ease: 'easeOut' }}
+                        >
+                          {STATUS_LABELS[l.status]}
+                        </motion.span>
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <div className="row" style={{ gap: 6 }}>
@@ -272,18 +322,35 @@ export default function LeadsPage() {
                     {open && (
                       <tr key={`${l.id}-detail`}>
                         <td colSpan={8} style={{ background: 'var(--panel-2)' }}>
-                          <div className="small" style={{ padding: '4px 2px' }}>
-                            <b>评分明细：</b>
-                            {scoreLead(l).reasons.join('；')}
-                            <br />
-                            <b className="muted">档案：</b>
-                            <span className="muted">
-                              {l.email || '无邮箱'} · 英文样题 {l.english_sample}/25 ·{' '}
-                              {l.us_clients_exp ? '有美区/欧区客户经验' : '无美区客户经验'} ·{' '}
-                              {l.chat_exp ? '有粉丝聊天经验' : '无聊天经验'} · {l.crm_exp ? '用过 CRM' : '未用过 CRM'} ·{' '}
-                              领域 {l.niche || '—'} · 导入 {new Date(l.created_at).toLocaleString('zh-CN')}
-                            </span>
-                          </div>
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            transition={{ type: 'spring', stiffness: 400, damping: 34 }}
+                            style={{ overflow: 'hidden' }}
+                          >
+                            <div className="small" style={{ padding: '4px 2px' }}>
+                              <b>评分明细：</b>
+                              {scoreLead(l).reasons.map((r, ri) => (
+                                <motion.span
+                                  key={ri}
+                                  style={{ display: 'inline-block', marginRight: 4 }}
+                                  initial={{ opacity: 0, x: -4 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  transition={{ duration: 0.2, delay: 0.08 + ri * 0.05, ease: 'easeOut' }}
+                                >
+                                  {r}；
+                                </motion.span>
+                              ))}
+                              <br />
+                              <b className="muted">档案：</b>
+                              <span className="muted">
+                                {l.email || '无邮箱'} · 英文样题 {l.english_sample}/25 ·{' '}
+                                {l.us_clients_exp ? '有美区/欧区客户经验' : '无美区客户经验'} ·{' '}
+                                {l.chat_exp ? '有粉丝聊天经验' : '无聊天经验'} · {l.crm_exp ? '用过 CRM' : '未用过 CRM'} ·{' '}
+                                领域 {l.niche || '—'} · 导入 {new Date(l.created_at).toLocaleString('zh-CN')}
+                              </span>
+                            </div>
+                          </motion.div>
                         </td>
                       </tr>
                     )}
@@ -293,9 +360,10 @@ export default function LeadsPage() {
             </tbody>
           </table>
         </div>
+        )}
       </div>
 
-      {toast && <div className="toast">{toast}</div>}
+      <Toast msg={toast} />
     </>
   );
 }
