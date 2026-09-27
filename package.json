@@ -12,6 +12,7 @@
     "video": "node scripts/make-video.mjs"
   },
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
     "echarts": "^5.5.1",
     "framer-motion": "^13.4.4",
     "next": "^15.5.0",
@@ -19,6 +20,7 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",

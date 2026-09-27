@@ -11,3 +11,5 @@ data/*.db-wal
 
 # 演示视频中间产物（成品 mp4 保留在 demo/ 下）
 demo/raw/
+
+.vercel

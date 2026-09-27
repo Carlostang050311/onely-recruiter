@@ -1,6 +1,6 @@
 // 存储与业务动作：读写线索、阶段流转、模拟发送（与参照稿 moveStage / simSend 语义一致）。
 
-import type { DatabaseSync } from 'node:sqlite';
+import type { Database as DatabaseSync } from 'better-sqlite3';
 import type { Lead, LeadRow, Status } from './types';
 import { STAGE_KEYS, STATUSES, addDays, rowToLead, todayStr } from './types';
 import { buildMessage } from './copy';

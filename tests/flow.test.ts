@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DatabaseSync } from 'node:sqlite';
+import DatabaseSync from 'better-sqlite3';
 import { classifyIntent } from '../src/lib/classify';
 import { scoreSampleAnswers, calibrationStats } from '../src/lib/sample';
 import { signSession, verifySession, leadToken, checkLeadToken } from '../src/lib/auth';

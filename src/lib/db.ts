@@ -1,12 +1,17 @@
-// SQLite 访问层 v2 —— 新表结构（与参照稿数据模型对齐）；检测到旧版表自动丢弃重建。
-// 全部走预编译语句。
+// SQLite 访问层：better-sqlite3（同步 API，win/linux 预编译）。
+// 本地落盘 data/app.db；Vercel 无服务器环境落 /tmp（暖实例级持久，冷启动自动重灌种子）。
+// 检测到旧版表结构自动丢弃重建。全部走预编译语句。
 
-import { DatabaseSync } from 'node:sqlite';
+import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { ensureSeeded } from './seed';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+export type DatabaseSync = Database.Database;
+
+// 注意：不要用 os.tmpdir()——@vercel/nft 构建期会静态解析它并 glob 整个 TEMP 目录。
+const IS_VERCEL = !!process.env.VERCEL;
+const DATA_DIR = IS_VERCEL ? process.env.TMP || '/tmp' : path.join(process.cwd(), 'data');
 const DB_PATH = path.join(DATA_DIR, 'app.db');
 
 const DDL: string[] = [
@@ -74,19 +79,19 @@ const DDL: string[] = [
   )`,
 ];
 
-let instance: DatabaseSync | null = null;
+let instance: Database.Database | null = null;
 
-function needsMigration(db: DatabaseSync): boolean {
+function needsMigration(db: Database.Database): boolean {
   const tbl = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='leads'").get();
   if (!tbl) return false;
   const cols = db.prepare('PRAGMA table_info(leads)').all() as { name: string }[];
   return !cols.some((c) => c.name === 'name'); // 旧版表无 name 列 → 丢弃重建
 }
 
-export function getDb(): DatabaseSync {
+export function getDb(): Database.Database {
   if (instance) return instance;
-  mkdirSync(DATA_DIR, { recursive: true });
-  instance = new DatabaseSync(DB_PATH);
+  if (!IS_VERCEL) mkdirSync(DATA_DIR, { recursive: true });
+  instance = new Database(DB_PATH);
   instance.prepare('PRAGMA journal_mode = WAL').run();
   instance.prepare('PRAGMA busy_timeout = 5000').run();
   if (needsMigration(instance)) {
@@ -99,10 +104,14 @@ export function getDb(): DatabaseSync {
   return instance;
 }
 
-/** 清库重灌（演示/录像用） */
+/** 清库重灌（演示/录像用）：业务表与事件表全部清空 */
 export function resetDb(): void {
   const db = getDb();
   db.prepare('DELETE FROM leads').run();
   db.prepare('DELETE FROM imports').run();
+  db.prepare('DELETE FROM samples').run();
+  db.prepare('DELETE FROM corrections').run();
+  db.prepare('DELETE FROM sends_log').run();
+  db.prepare('DELETE FROM audit').run();
   ensureSeeded(db);
 }

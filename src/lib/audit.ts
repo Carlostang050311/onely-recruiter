@@ -1,5 +1,5 @@
 // 审计日志：谁在什么时候对哪条线索做了什么。
-import type { DatabaseSync } from 'node:sqlite';
+import type { Database as DatabaseSync } from 'better-sqlite3';
 
 export function audit(
   db: DatabaseSync,

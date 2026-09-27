@@ -8,7 +8,6 @@ export default function LoginPage() {
   const [user, setUser] = useState('');
   const [pass, setPass] = useState('');
   const [err, setErr] = useState('');
-  const isDev = process.env.NODE_ENV !== 'production';
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -45,11 +44,10 @@ export default function LoginPage() {
         </div>
         {err && <div className="small" style={{ color: 'var(--red)' }}>{err}</div>}
         <button className="btn btn-primary" type="submit" style={{ justifyContent: 'center' }}>进入作战台</button>
-        {isDev && (
-          <div className="small muted">
-            开发环境默认账号：<b>dev / onely2026</b>（lead 角色）· <b>ops / onely2026</b>（operator 角色）。生产请用 USERS / SESSION_SECRET 环境变量。
-          </div>
-        )}
+        <div className="small muted">
+          默认演示账号：<b>dev / onely2026</b>（lead 角色）· <b>ops / onely2026</b>（operator 角色）。部署环境可用 USERS /
+          SESSION_SECRET 环境变量覆盖；若提示凭据错误说明该环境已自定义账号。
+        </div>
       </form>
     </div>
   );

@@ -20,8 +20,16 @@ export default function Nav({ onNavigate }: { onNavigate?: () => void }) {
 
   const load = useCallback(() => {
     fetch('/api/stats')
-      .then((r) => r.json())
-      .then((s) => setOnboarded(s.kpi.onboarded as number))
+      .then((r) => {
+        if (r.status === 401) {
+          window.location.href = '/login';
+          return null;
+        }
+        return r.json();
+      })
+      .then((s) => {
+        if (s) setOnboarded(s.kpi.onboarded as number);
+      })
       .catch(() => undefined);
   }, []);
   useEffect(() => {
