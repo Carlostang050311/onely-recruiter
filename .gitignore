@@ -13,3 +13,4 @@ data/*.db-wal
 demo/raw/
 
 .vercel
+deploy.log
