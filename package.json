@@ -1,0 +1,26 @@
+{
+  "name": "onely-recruiter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Onely Operator 招募冲刺原型：线索导入去重 / 评分分级 / 个性化触达 / 跟进看板 / 漏斗数据",
+  "scripts": {
+    "dev": "next dev -p 3777",
+    "build": "next build",
+    "start": "next start -p 3777",
+    "test": "vitest run",
+    "seed:reset": "curl -s -X POST http://localhost:3777/api/seed"
+  },
+  "dependencies": {
+    "next": "^15.5.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "playwright": "^1.54.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.0"
+  }
+}

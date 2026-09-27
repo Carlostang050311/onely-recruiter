@@ -1,0 +1,13 @@
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# 本地数据库（seed 会自动重建）
+data/*.db
+data/*.db-journal
+data/*.db-wal
+
+# 演示视频中间产物（成品 mp4 保留在 demo/ 下）
+demo/raw/
