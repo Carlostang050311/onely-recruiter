@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start -p 3777",
     "test": "vitest run",
-    "seed:reset": "curl -s -X POST http://localhost:3777/api/seed"
+    "seed:reset": "curl -s -X POST http://localhost:3777/api/seed",
+    "video": "node scripts/make-video.mjs"
   },
   "dependencies": {
     "next": "^15.5.0",
