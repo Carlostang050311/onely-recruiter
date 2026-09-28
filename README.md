@@ -4,7 +4,7 @@
 
 | 形态 | 地址 | 说明 |
 |---|---|---|
-| 服务端完整版（Vercel 生产） | https://onely-recruiter.vercel.app | 永久域名；含 webhook 端点、SQLite（/tmp + 冷启动重灌种子）、RBAC；**大陆网络需 Clash 等代理访问**（vercel.app 域名被墙），境外直连正常 |
+| 服务端完整版（Vercel 生产） | https://onely-recruiter.vercel.app | 永久域名；含 webhook 端点、SQLite（/tmp + 冷启动重灌种子）、RBAC；**已通过 17 项生产冒烟**；大陆网络需 Clash 等代理访问（vercel.app 域名被墙），境外直连正常 |
 | 静态演示版（GitHub Pages） | https://carlostang050311.github.io/onely-recruiter/ | 数据存浏览器 localStorage；webhook 由看板页「事件模拟器」替代；国内可直连 |
 | 服务端完整版（本地） | http://localhost:3777 | `npm run build && npm run start`；落盘 SQLite，数据持久 |
 | 服务端完整版（Netlify） | https://onely-ops-console.netlify.app | 已部署 ready；新账号风控边缘锁待平台解除 |
