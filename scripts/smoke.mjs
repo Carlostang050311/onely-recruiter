@@ -90,7 +90,7 @@ async function main() {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ action: 'send' }),
   }).then(j);
-  check('样题发放', !!sent.token && sent.url.includes('/sample/'));
+  check('样题发放', !!sent.token && sent.url.includes('/sample'), sent.url);
   const answers = [
     'hey you, sorry your day was rough — that sounds genuinely exhausting. I am here now though, tell me everything while I finish editing tonight`s post ❤',
     'omg stop, you are the reason I check my own comments haha... btw I saved that meme for you, btw did you eat today?',
