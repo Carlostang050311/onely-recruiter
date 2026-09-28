@@ -1,5 +1,14 @@
 # Onely 运营招募作战台 · Operator Growth Console
 
+**公网体验地址**
+
+| 形态 | 地址 | 说明 |
+|---|---|---|
+| 静态演示版（GitHub Pages） | https://carlostang050311.github.io/onely-recruiter/ | 数据存浏览器 localStorage；webhook 由看板页「事件模拟器」替代；登录 dev / onely2026 |
+| 服务端完整版（本地） | http://localhost:3777 | `npm run build && npm run start`；SQLite 持久化、真实 webhook 端点、RBAC |
+| 服务端完整版（Netlify） | https://onely-ops-console.netlify.app | 已部署 ready；新账号风控边缘锁待平台解除后公网可见 |
+| 代码仓库 | https://github.com/Carlostang050311/onely-recruiter | main = 源码；gh-pages = 静态导出 |
+
 Onely（[onely.cc](https://www.onely.cc)，AI 驱动的创作者商业平台）首期情感陪伴业务的 **Operator 招募作战控制台**：把「3 天找到、触达并促成 100 名有美区社媒运营能力的 Operator 入驻」从 9 人团队的活压缩到 0.5 人 + 工具。
 
 六个视图：作战仪表盘 / 线索库与分级 / 跟进看板 / 触达文案台 / 3 天增长方案 / 范围与假设。技术栈：Next.js 15 + SQLite（Node 内建 `node:sqlite`）+ ECharts 5.5 + framer-motion。
@@ -10,14 +19,19 @@ Onely（[onely.cc](https://www.onely.cc)，AI 驱动的创作者商业平台）�
 
 ## 一、运行方式
 
-**环境要求**：Node ≥ 22.5（`node:sqlite` 无 flag 可用；开发验证于 Node 24）。无需数据库服务、无需 API Key。
+**环境要求**：Node ≥ 22.5；无需数据库服务、无需 API Key（数据库为 sql.js WASM，零原生依赖）。
 
 ```bash
 npm install
 npm run dev          # 开发模式，http://localhost:3777
 # 或生产模式
 npm run build && npm run start
+
+# 静态演示版（GitHub Pages 形态）
+node scripts/build-static.mjs   # 产出 out/，数据引擎切到浏览器 localStorage
 ```
+
+静态版与服务端版共用全部页面与逻辑：构建期移走 API 路由、注入 fetch 遮罩（`NEXT_PUBLIC_STATIC=1`），页面代码零改动；差异仅三处——数据存 localStorage、webhook 由看板「事件模拟器」按钮触发、审计/校准/留存运行在浏览器内。
 
 - 首次打开自动灌入 54 条演示线索（预置漏斗：7 入驻 / 6 通过 / 9 回复 / 15 触达 / 17 新）。
 - 重置演示数据：顶栏「重置演示数据」，或 `curl -X POST http://localhost:3777/api/seed`。

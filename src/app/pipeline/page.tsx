@@ -12,7 +12,9 @@ export default function PipelinePage() {
   const [loading, setLoading] = useState(true);
   const [drawerId, setDrawerId] = useState<string | null>(null);
   const [toast, setToast] = useState('');
+  const [simLead, setSimLead] = useState('');
   const today = todayStr();
+  const isStatic = process.env.NEXT_PUBLIC_STATIC === '1';
 
   const load = useCallback(() => {
     setLoading(true);
@@ -63,6 +65,18 @@ export default function PipelinePage() {
     setToast('已记录跟进：' + l.name);
   }
 
+  async function fireWebhook(type: string, extra: Record<string, unknown> = {}) {
+    const lead = leads.find((l) => l.id === simLead) ?? leads.find((l) => l.status === 'contacted');
+    if (!lead) return;
+    await fetch('/api/webhook', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-webhook-key': 'onely-hook' },
+      body: JSON.stringify({ type, email: lead.email, ...extra }),
+    });
+    load();
+    setToast(`事件已模拟：${type} → ${lead.name}`);
+  }
+
   const reminders = leads.filter(
     (l) => l.next_followup_at && l.next_followup_at <= today && ['contacted', 'replied', 'qualified'].includes(l.status)
   );
@@ -70,6 +84,28 @@ export default function PipelinePage() {
 
   return (
     <>
+      {isStatic && (
+        <div className="card section-gap">
+          <div className="card-title">
+            事件模拟器 <span className="sub">静态演示版：替代生产环境的表单/邮件/电子签 webhook</span>
+          </div>
+          <div className="toolbar" style={{ marginBottom: 0 }}>
+            <select className="field" style={{ minWidth: 220 }} value={simLead} onChange={(e) => setSimLead(e.target.value)}>
+              <option value="">选择线索（默认首个已触达）</option>
+              {leads.slice(0, 40).map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.tier} · {l.name}（{l.status}）
+                </option>
+              ))}
+            </select>
+            <button className="btn btn-sm" onClick={() => fireWebhook('reply', { text: 'Yes! Send me the signup link please' })}>模拟回复·感兴趣</button>
+            <button className="btn btn-sm" onClick={() => fireWebhook('reply', { text: 'How does the payout work?' })}>模拟回复·提问</button>
+            <button className="btn btn-sm" onClick={() => fireWebhook('reply', { text: 'Not interested, please stop.' })}>模拟回复·拒绝</button>
+            <button className="btn btn-sm" onClick={() => fireWebhook('form', { quiz_score: 5 })}>模拟筛选表 5 分</button>
+            <button className="btn btn-sm" onClick={() => fireWebhook('sign')}>模拟电子签完成</button>
+          </div>
+        </div>
+      )}
       <h3 className="mt8" style={{ marginBottom: 10, fontSize: 14.5 }}>
         待跟进提醒 <span className="small muted">（逾期 / 今日到期）</span>
       </h3>

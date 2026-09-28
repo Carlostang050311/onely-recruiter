@@ -286,7 +286,7 @@ export async function samplePost(req: NextRequest, id: string, actor: string) {
     saveLead(db, lead);
     audit(db, actor, 'sample.send', id, token.slice(0, 6) + '…');
     const base = process.env.APP_BASE || 'http://localhost:3777';
-    return json({ token, url: `${base}/sample/${token}` });
+    return json({ token, url: `${base}/sample?t=${token}` });
   }
   if (body.action === 'correct') {
     const row = db.prepare('SELECT machine_score FROM samples WHERE lead_id = ?').get(id) as

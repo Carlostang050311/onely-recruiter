@@ -98,9 +98,16 @@ function LeadsInner() {
     setToast(action === 'grade' ? `已对 ${d.n} 条线索重新分级` : `已为 ${d.n} 条新线索生成首触文案（未发送）`);
   }
 
-  function exportCsv() {
+  async function exportCsv() {
     const ids = selected.size ? `?ids=${[...selected].join(',')}` : '';
-    window.location.href = `/api/leads/export${ids}`;
+    const res = await fetch(`/api/leads/export${ids}`);
+    const text = await res.text();
+    const blob = new Blob([text], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `onely_leads_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     setToast(`已导出 ${selected.size || leads.length} 条线索`);
   }
 

@@ -1,6 +1,6 @@
 // API 冒烟测试 v3：登录会话 + 核心链路 + 事件 webhook + 样题闭环 + 合规件。
-// node scripts/smoke.mjs（需服务已启动）
-const BASE = 'http://localhost:3777';
+// node scripts/smoke.mjs（需服务已启动）；SMOKE_BASE 可指向部署环境
+const BASE = process.env.SMOKE_BASE || 'http://localhost:3777';
 let COOKIE = '';
 
 async function api(path, opts = {}) {

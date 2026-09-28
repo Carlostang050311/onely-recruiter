@@ -316,14 +316,15 @@ export default function Drawer({
                     <>
                       <div className="flab">样题链接（token 即密钥，发给候选人）</div>
                       <div className="msg-box" style={{ maxHeight: 60 }}>
-                        {typeof window !== 'undefined' ? window.location.origin : ''}/sample/{String(sample.token)}
+                        {typeof window !== 'undefined' ? window.location.origin : ''}
+                        {process.env.NEXT_PUBLIC_STATIC === '1' ? '/onely-recruiter' : ''}/sample?t={String(sample.token)}
                       </div>
                       <div className="toolbar mt8">
                         <button
                           className="btn btn-sm"
                           onClick={() => {
                             navigator.clipboard.writeText(
-                              `${window.location.origin}/sample/${String(sample.token)}`
+                              `${window.location.origin}${process.env.NEXT_PUBLIC_STATIC === '1' ? '/onely-recruiter' : ''}/sample?t=${String(sample.token)}`
                             );
                             setToast('链接已复制');
                           }}

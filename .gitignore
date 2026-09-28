@@ -14,3 +14,7 @@ demo/raw/
 
 .vercel
 deploy.log
+
+# Local Netlify folder
+.netlify
+demo/static-serve/

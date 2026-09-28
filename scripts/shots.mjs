@@ -1,8 +1,9 @@
 // 六视图截图 + 参照稿对照截图：node scripts/shots.mjs
-// 依赖本机 http://localhost:3777 已启动。
+// 依赖本机服务已启动；SHOTS_BASE 可指向其他环境（如静态版 http://localhost:4173/onely-recruiter）
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
 
+const BASE = process.env.SHOTS_BASE || 'http://localhost:3777';
 mkdirSync('demo/shots', { recursive: true });
 
 async function launch() {
@@ -24,7 +25,7 @@ const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, d
 // 登录（会话 cookie 在整个 context 内有效）
 {
   const page = await ctx.newPage();
-  await page.goto('http://localhost:3777/login', { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
   await page.screenshot({ path: 'demo/shots/v2-login.png' });
   console.log('shot: v2-login');
   await page.locator('input[type="password"]').fill('onely2026');
@@ -35,7 +36,7 @@ const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, d
 
 const authedFetch = async (path, opts = {}) => {
   const cookies = await ctx.cookies();
-  return fetch('http://localhost:3777' + path, {
+  return fetch(BASE + path, {
     ...opts,
     headers: { ...(opts.headers || {}), cookie: cookies.map((c) => `${c.name}=${c.value}`).join('; ') },
   });
@@ -53,7 +54,7 @@ const pages = [
 
 for (const p of pages) {
   const page = await ctx.newPage();
-  await page.goto(`http://localhost:3777${p.url}`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}${p.url}`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(1400);
   await page.screenshot({ path: `demo/shots/${p.name}.png`, fullPage: p.full });
   console.log('shot:', p.name);
@@ -64,7 +65,7 @@ for (const p of pages) {
 {
   await authedFetch('/api/seed', { method: 'POST' });
   const page = await ctx.newPage();
-  await page.goto('http://localhost:3777/leads', { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/leads`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(900);
   await page.locator('tbody tr').first().click();
   await page.waitForTimeout(900);
