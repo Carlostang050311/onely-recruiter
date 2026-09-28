@@ -19,3 +19,5 @@ deploy.log
 .netlify
 demo/static-serve/
 .vercel-login.log
+devmode.log
+tunnel.log
