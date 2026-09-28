@@ -13,8 +13,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh-CN">
       <body>
         <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap"
+          rel="icon"
+          href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23151012'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23d8a45d' stroke-width='2.5'/%3E%3Ccircle cx='16' cy='16' r='3.5' fill='%23c84c66'/%3E%3C/svg%3E"
         />
         <Providers>
           <AppShell>{children}</AppShell>

@@ -17,7 +17,7 @@ body {
   font-family: "Noto Sans SC", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 14px; line-height: 1.55; -webkit-font-smoothing: antialiased;
 }
-h1, h2, h3, h4, .serif { font-family: "Noto Serif SC", "Noto Sans SC", serif; font-weight: 600; }
+h1, h2, h3, h4, .serif { font-family: "Noto Serif SC", "Songti SC", "SimSun", "Noto Sans SC", serif; font-weight: 600; }
 button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
 input, select, textarea { font-family: inherit; font-size: 13.5px; color: var(--text); }
 a { color: var(--gold-soft); text-decoration: none; }
