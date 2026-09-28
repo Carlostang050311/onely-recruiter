@@ -18,3 +18,4 @@ deploy.log
 # Local Netlify folder
 .netlify
 demo/static-serve/
+.vercel-login.log
