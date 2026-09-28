@@ -77,6 +77,8 @@ class Stmt {
 }
 
 export class Db {
+  private suspended = false;
+
   constructor(
     private raw: Database,
     private file: string | null
@@ -86,9 +88,14 @@ export class Db {
     return new Stmt(this.raw, text, () => this.persist());
   }
 
-  /** 导出整库字节写回文件（无文件时为 no-op） */
+  /** 批量写入期间挂起落盘（灌种子等场景），结束后 flush 一次 */
+  suspendPersist(v: boolean): void {
+    this.suspended = v;
+  }
+
+  /** 导出整库字节写回文件（无文件/挂起时为 no-op） */
   persist(): void {
-    if (!this.file) return;
+    if (!this.file || this.suspended) return;
     writeFileSync(this.file, Buffer.from(this.raw.export()));
   }
 }

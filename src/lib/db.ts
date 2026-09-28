@@ -95,17 +95,23 @@ export async function ensureDb(): Promise<Db> {
 async function load(): Promise<Db> {
   if (!IS_SERVERLESS) mkdirSync(DATA_DIR, { recursive: true });
   const db = await openDb(DB_PATH);
-  const tbl = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='leads'").get();
-  if (tbl) {
-    const cols = db.prepare('PRAGMA table_info(leads)').all() as { name: string }[];
-    if (!cols.some((c) => c.name === 'name')) {
-      db.prepare('DROP TABLE IF EXISTS leads').run();
-      db.prepare('DROP TABLE IF EXISTS imports').run();
+  db.suspendPersist(true);
+  try {
+    const tbl = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='leads'").get();
+    if (tbl) {
+      const cols = db.prepare('PRAGMA table_info(leads)').all() as { name: string }[];
+      if (!cols.some((c) => c.name === 'name')) {
+        db.prepare('DROP TABLE IF EXISTS leads').run();
+        db.prepare('DROP TABLE IF EXISTS imports').run();
+      }
     }
+    for (const s of DDL) db.prepare(s).run();
+    const row = db.prepare('SELECT COUNT(*) AS n FROM leads').get() as { n: number };
+    if (row.n === 0) ensureSeeded(db);
+  } finally {
+    db.suspendPersist(false);
+    db.persist();
   }
-  for (const s of DDL) db.prepare(s).run();
-  const row = db.prepare('SELECT COUNT(*) AS n FROM leads').get() as { n: number };
-  if (row.n === 0) ensureSeeded(db);
   instance = db;
   return db;
 }
