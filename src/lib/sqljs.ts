@@ -1,18 +1,16 @@
 // sql.js（SQLite WASM）适配层：对外暴露 prepare/run/get/all 同步接口（参数化绑定，与 better-sqlite3 同构）。
 // 零原生依赖：本地 / Vercel / Netlify 同一驱动；变更语句自动 export 落盘。
-import initSqlJs from 'sql.js';
+import initSqlJs from 'sql.js/dist/sql-asm.js';
 import type { BindParams, Database, QueryExecResult, SqlJsStatic } from 'sql.js';
 import { readFileSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
 
 let SQL: SqlJsStatic | null = null;
 let initPromise: Promise<SqlJsStatic> | null = null;
 
 export function initSql(): Promise<SqlJsStatic> {
   if (!initPromise) {
-    initPromise = initSqlJs({
-      locateFile: (f: string) => path.join(process.cwd(), 'node_modules', 'sql.js', 'dist', f),
-    }).then((s) => {
+    // asm.js 构建：纯 JS、无外部 wasm 资产，serverless 宿主上最稳
+    initPromise = initSqlJs().then((s: SqlJsStatic) => {
       SQL = s;
       return s;
     });
