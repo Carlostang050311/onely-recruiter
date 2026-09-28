@@ -14,7 +14,7 @@
 
 Onely（[onely.cc](https://www.onely.cc)，AI 驱动的创作者商业平台）首期情感陪伴业务的 **Operator 招募作战控制台**：把「3 天找到、触达并促成 100 名有美区社媒运营能力的 Operator 入驻」从 9 人团队的活压缩到 0.5 人 + 工具。
 
-六个视图：作战仪表盘 / 线索库与分级 / 跟进看板 / 触达文案台 / 3 天增长方案 / 范围与假设。技术栈：Next.js 15 + SQLite（Node 内建 `node:sqlite`）+ ECharts 5.5 + framer-motion。
+六个视图：作战仪表盘 / 线索库与分级 / 跟进看板 / 触达文案台 / 3 天增长方案 / 范围与假设。技术栈：Next.js 15 + SQLite（sql.js WASM 适配层，零原生依赖）+ ECharts 5.5 + framer-motion。
 
 > 演示数据全部为虚构人物（固定随机种子生成），不含真实个人信息。对外话术统一使用 Onely 官方口径「creator fan-relationship operations（创作者粉丝关系运营）」。
 
@@ -104,9 +104,9 @@ curl -X POST localhost:3777/api/webhook ... -d '{"type":"sign","email":"x@y.com"
 
 **真实发送通道与合规**：配置 `EMAIL_PROVIDER=resend|postmark` + `EMAIL_API_KEY` + `EMAIL_FROM` 后邮件真发（endpoint 硬编码字面量 host）；未配置即模拟发送。邮件自动附加退订页脚（`/api/unsubscribe?t=<hmac>`，退订即流失）。每渠道日限频 `SEND_CAP`（默认 100，超出 429）。Telegram 生产接线请经自有出口代理（代理侧做 host 白名单），原型阶段模拟。
 
-**样题闭环与校准**：抽屉「样题与校准」Tab 发放样题 → 候选人公开页 `/sample/<token>` 作答 3 条脚本化粉丝消息 → 提交后规则版 rubric 机评（共情 30 / 人设 25 / 语法 20 / 转化 15 / 红线 10）→ 人工修正留痕 → 「范围与假设」页出机评人评一致性报告（平均绝对偏差、±10 内占比）。机评 <60 自动提示 waitlist/婉拒。
+**样题闭环与校准**：抽屉「样题与校准」Tab 发放样题 → 候选人公开页 `/sample?t=<token>` 作答 3 条脚本化粉丝消息 → 提交后规则版 rubric 机评（共情 30 / 人设 25 / 语法 20 / 转化 15 / 红线 10）→ 人工修正留痕 → 「范围与假设」页出机评人评一致性报告（平均绝对偏差、±10 内占比）。机评 <60 自动提示 waitlist/婉拒。
 
-**审计与 PII 留存**：全部写操作（发送/推进/编辑/导入/重置/修正/留存）进审计日志（scope 页可见最近 15 条）；`POST /api/admin/retention {days:90}` 将超期 lost 线索匿名化（姓名→Anonymized-ID，清空联系方式与备注），scope 页有一键按钮。
+**审计与 PII 留存**：全部写操作（发送/推进/编辑/导入/重置/修正/留存）进审计日志（scope 页可见最新 15 条）；`POST /api/admin/retention {days:90}` 将超期 lost 线索匿名化（姓名→Anonymized-ID，清空联系方式与备注），scope 页有一键按钮。
 
 ---
 
