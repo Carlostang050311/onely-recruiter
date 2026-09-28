@@ -1,6 +1,6 @@
 // 样题闭环：3 条脚本化粉丝消息的限时人设回复，规则版 rubric 机评（0-100）+ 人工修正留痕。
 // 机评维度：共情与语气 30 / 人设贴合 25 / 语法与清晰 20 / 转化意识 15 / 安全红线 10。
-import type { Database as DatabaseSync } from 'better-sqlite3';
+import type { Db as DatabaseSync } from './sqljs';
 
 export interface RubricPart {
   k: string;

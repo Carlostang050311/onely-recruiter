@@ -1,5 +1,5 @@
 // PII 留存策略：lost 且超过 N 天（默认 90）的线索自动匿名化（GDPR / 菲律宾 DPA 口径）。
-import type { Database as DatabaseSync } from 'better-sqlite3';
+import type { Db as DatabaseSync } from './sqljs';
 import type { LeadRow } from './types';
 
 export function anonymizeStale(db: DatabaseSync, days: number, now = new Date()): number {

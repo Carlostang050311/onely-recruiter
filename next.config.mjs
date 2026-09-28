@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // 原生模块不打包不 trace：本地与 Vercel 均从 node_modules 直接 require
-  serverExternalPackages: ['better-sqlite3'],
+  // WASM/原生模块不打包不 trace：从 node_modules 直接 require（sql.js 的 wasm 资源随包走）
+  serverExternalPackages: ['sql.js'],
 };
 
 export default nextConfig;

@@ -1,17 +1,21 @@
-// SQLite 访问层：better-sqlite3（同步 API，win/linux 预编译）。
-// 本地落盘 data/app.db；Vercel 无服务器环境落 /tmp（暖实例级持久，冷启动自动重灌种子）。
-// 检测到旧版表结构自动丢弃重建。全部走预编译语句。
+// SQLite 访问层：sql.js（WASM）单驱动，本地 / Vercel / Netlify 通用。
+// 本地落盘 data/app.db；无服务器环境落 /tmp（暖实例级持久，冷启动自动重灌种子）。
+// 路由分发层须先 await ensureDb()。
 
-import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { Db, openDb } from './sqljs';
 import { ensureSeeded } from './seed';
 
-export type DatabaseSync = Database.Database;
+export type DatabaseSync = Db;
 
-// 注意：不要用 os.tmpdir()——@vercel/nft 构建期会静态解析它并 glob 整个 TEMP 目录。
-const IS_VERCEL = !!process.env.VERCEL;
-const DATA_DIR = IS_VERCEL ? process.env.TMP || '/tmp' : path.join(process.cwd(), 'data');
+const IS_SERVERLESS = !!(
+  process.env.VERCEL ||
+  process.env.NETLIFY ||
+  process.env.LAMBDA_TASK_ROOT ||
+  process.env.AWS_LAMBDA_FUNCTION_NAME
+);
+const DATA_DIR = IS_SERVERLESS ? process.env.TMP || '/tmp' : path.join(process.cwd(), 'data');
 const DB_PATH = path.join(DATA_DIR, 'app.db');
 
 const DDL: string[] = [
@@ -79,28 +83,35 @@ const DDL: string[] = [
   )`,
 ];
 
-let instance: Database.Database | null = null;
+let instance: Db | null = null;
+let loading: Promise<Db> | null = null;
 
-function needsMigration(db: Database.Database): boolean {
-  const tbl = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='leads'").get();
-  if (!tbl) return false;
-  const cols = db.prepare('PRAGMA table_info(leads)').all() as { name: string }[];
-  return !cols.some((c) => c.name === 'name'); // 旧版表无 name 列 → 丢弃重建
+export async function ensureDb(): Promise<Db> {
+  if (instance) return instance;
+  if (!loading) loading = load();
+  return loading;
 }
 
-export function getDb(): Database.Database {
-  if (instance) return instance;
-  if (!IS_VERCEL) mkdirSync(DATA_DIR, { recursive: true });
-  instance = new Database(DB_PATH);
-  instance.prepare('PRAGMA journal_mode = WAL').run();
-  instance.prepare('PRAGMA busy_timeout = 5000').run();
-  if (needsMigration(instance)) {
-    instance.prepare('DROP TABLE IF EXISTS leads').run();
-    instance.prepare('DROP TABLE IF EXISTS imports').run();
+async function load(): Promise<Db> {
+  if (!IS_SERVERLESS) mkdirSync(DATA_DIR, { recursive: true });
+  const db = await openDb(DB_PATH);
+  const tbl = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='leads'").get();
+  if (tbl) {
+    const cols = db.prepare('PRAGMA table_info(leads)').all() as { name: string }[];
+    if (!cols.some((c) => c.name === 'name')) {
+      db.prepare('DROP TABLE IF EXISTS leads').run();
+      db.prepare('DROP TABLE IF EXISTS imports').run();
+    }
   }
-  for (const stmt of DDL) instance.prepare(stmt).run();
-  const row = instance.prepare('SELECT COUNT(*) AS n FROM leads').get() as { n: number };
-  if (row.n === 0) ensureSeeded(instance);
+  for (const s of DDL) db.prepare(s).run();
+  const row = db.prepare('SELECT COUNT(*) AS n FROM leads').get() as { n: number };
+  if (row.n === 0) ensureSeeded(db);
+  instance = db;
+  return db;
+}
+
+export function getDb(): Db {
+  if (!instance) throw new Error('db not initialized — await ensureDb() first');
   return instance;
 }
 

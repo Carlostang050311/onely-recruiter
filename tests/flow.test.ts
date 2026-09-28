@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import DatabaseSync from 'better-sqlite3';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { createMemoryDb, initSql } from '../src/lib/sqljs';
 import { classifyIntent } from '../src/lib/classify';
 import { scoreSampleAnswers, calibrationStats } from '../src/lib/sample';
 import { signSession, verifySession, leadToken, checkLeadToken } from '../src/lib/auth';
@@ -59,8 +59,12 @@ describe('auth session 与 token', () => {
   });
 });
 
+beforeAll(async () => {
+  await initSql();
+});
+
 function memDb() {
-  const db = new DatabaseSync(':memory:');
+  const db = createMemoryDb();
   db.prepare(
     `CREATE TABLE leads (id TEXT PRIMARY KEY, name TEXT, status TEXT, created_at TEXT, email TEXT, phone TEXT, telegram TEXT, profile_url TEXT, notes TEXT, skills TEXT)`
   ).run();

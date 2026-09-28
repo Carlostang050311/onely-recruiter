@@ -3,7 +3,7 @@
 // - Telegram：原型阶段保持模拟发送；生产接线请经自有出口代理（代理侧做 host 白名单），见 README
 // - 未配置凭据时回落「模拟发送」，行为与之前一致
 // - 合规：邮件自动附加退订页脚；按渠道日限频（超出返回限流错误）
-import type { Database as DatabaseSync } from 'better-sqlite3';
+import type { Db as DatabaseSync } from './sqljs';
 import type { Lead } from './types';
 import { leadToken } from './auth';
 import { todayStr } from './types';

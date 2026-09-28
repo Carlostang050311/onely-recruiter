@@ -1,7 +1,7 @@
 // 演示数据 v2 —— 移植参照稿 seedData：54 条虚构线索，预置漏斗 7 入驻 / 6 通过 / 9 回复 / 15 触达 / 17 新。
 // 固定随机种子 20260927，可复现。
 
-import type { Database as DatabaseSync } from 'better-sqlite3';
+import type { Db as DatabaseSync } from './sqljs';
 import { grade } from './scoring';
 import type { Lead, Status } from './types';
 import { COUNTRIES, SOURCES, countryByCode, addDays, todayStr } from './types';

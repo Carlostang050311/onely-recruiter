@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as H from '../../../lib/api-core';
 import { verifySession, COOKIE } from '../../../lib/auth';
+import { ensureDb } from '../../../lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +26,7 @@ async function gate(req: NextRequest, p: string): Promise<{ actor: string; err?:
 }
 
 export async function GET(req: NextRequest, ctx: Ctx) {
+  await ensureDb();
   const p = (await ctx.params).slug.join('/');
   const g = await gate(req, p);
   if (g.err) return g.err;
@@ -39,6 +41,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 }
 
 export async function POST(req: NextRequest, ctx: Ctx) {
+  await ensureDb();
   const p = (await ctx.params).slug.join('/');
   const g = await gate(req, p);
   if (g.err) return g.err;
@@ -60,6 +63,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 }
 
 export async function PATCH(req: NextRequest, ctx: Ctx) {
+  await ensureDb();
   const p = (await ctx.params).slug.join('/');
   const g = await gate(req, p);
   if (g.err) return g.err;
